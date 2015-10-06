@@ -298,7 +298,7 @@ HEADERS_PUBLIC =../include/igraph.h 		../include/igraph_memory.h    \
 		../include/igraph_community.h	../include/igraph_operators.h \
 		../include/igraph_components.h	../include/igraph_paths.h     \
 		../include/igraph_constructors.h ../include/igraph_progress.h \
-		../include/igraph_conversion.h	\
+		../include/igraph_conversion.h	../include/igraph_fsm.h\
 		../include/igraph_datatype.h	../include/igraph_structural.h\
 		../include/igraph_flow.h	../include/igraph_topology.h  \
 		../include/igraph_foreign.h	../include/igraph_transitivity.h \
@@ -335,7 +335,7 @@ SOURCES = 		     basic_query.c games.c cocitation.c iterators.c \
 			     dqueue.c heap.c igraph_heap.c igraph_stack.c \
 			     igraph_strvector.c igraph_trie.c matrix.c \
 			     vector.c vector_ptr.c memory.c adjlist.c \
-			     visitors.c igraph_grid.c atlas.c topology.c \
+			     visitors.c igraph_grid.c atlas.c fsm.c topology.c \
 			     motifs.c progress.c operators.c \
 			     igraph_psumtree.c array.c igraph_hashtable.c \
 			     foreign-graphml.c flow.c igraph_buckets.c \

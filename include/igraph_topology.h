@@ -171,6 +171,18 @@ int igraph_get_isomorphisms_vf2(const igraph_t *graph1,
 				igraph_isocompat_t *edge_compat_fn,
 				void *arg);
 
+int igraph_is_subisomorphism(igraph_vector_t *map12,
+			     igraph_vector_t *map21,
+			     const igraph_t *graph1,
+			     const igraph_t *graph2,
+			     const igraph_vector_int_t *vertex_color1,
+			     const igraph_vector_int_t *vertex_color2,
+			     const igraph_vector_int_t *edge_color1,
+			     const igraph_vector_int_t *edge_color2,
+			     igraph_isocompat_t *node_compat_fn,
+			     igraph_isocompat_t *edge_compat_fn,
+			     void *arg,
+			     igraph_bool_t *iso);
 int igraph_subisomorphic_vf2(const igraph_t *graph1, const igraph_t *graph2, 
 			     const igraph_vector_int_t *vertex_color1,
 			     const igraph_vector_int_t *vertex_color2,

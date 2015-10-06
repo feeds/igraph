@@ -1911,6 +1911,255 @@ int igraph_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 }
 
 /**
+ * \function igraph_is_subisomorphism
+ * Check if the specified mapping embeds graph2 as an induced subgraph in graph1
+ *
+ * \param map12 Pointer to a vector or \c NULL. If not \c NULL, then the
+ *    mapping from \p graph1 to \p graph2 is checked. Only one of map12 or map21
+ *    should be non \c NULL.
+ * \param map21 Pointer to a vector ot \c NULL. If not \c NULL, then the
+ *    mapping from \p graph2 to \p graph1 is checked. Only one of map12 or map21
+ *    should be non \c NULL.
+ * \param graph1 The first input graph, may be directed or
+ *    undirected. This is supposed to be the larger graph.
+ * \param graph2 The second input graph, it must have the same
+ *    directedness as \p graph1. This is supposed to be the smaller
+ *    graph.
+ * \param vertex_color1 An optional color vector for the first graph. If
+ *   color vectors are given for both graphs, then the subgraph isomorphism is
+ *   calculated on the colored graphs; i.e. two vertices can match
+ *   only if their color also matches. Supply a null pointer here if
+ *   your graphs are not colored.
+ * \param vertex_color2 An optional color vector for the second graph. See
+ *   the previous argument for explanation.
+ * \param edge_color1 An optional edge color vector for the first
+ *   graph. The matching edges in the two graphs must have matching
+ *   colors as well. Supply a null pointer here if your graphs are not 
+ *   edge-colored.
+ * \param edge_color2 The edge color vector for the second graph.
+ * \param node_compat_fn A pointer to a function of type \ref 
+ *   igraph_isocompat_t. This function will be called by the algorithm to
+ *   determine whether two nodes are compatible.
+ * \param edge_compat_fn A pointer to a function of type \ref 
+ *   igraph_isocompat_t. This function will be called by the algorithm to
+ *   determine whether two edges are compatible.
+ * \param arg Extra argument to supply to functions \p isohandler_fn, \p
+ *   node_compat_fn and \p edge_compat_fn.
+ * \param iso Pointer to a boolean, the result is stored here.
+ */
+
+int igraph_is_subisomorphism(igraph_vector_t *map12,
+				      igraph_vector_t *map21,
+				      const igraph_t *graph1,
+				      const igraph_t *graph2,
+				      const igraph_vector_int_t *vertex_color1,
+				      const igraph_vector_int_t *vertex_color2,
+				      const igraph_vector_int_t *edge_color1,
+				      const igraph_vector_int_t *edge_color2,
+				      igraph_isocompat_t *node_compat_fn,
+				      igraph_isocompat_t *edge_compat_fn,
+				      void *arg,
+				      igraph_bool_t *iso) {
+  long int no_of_nodes1=igraph_vcount(graph1),
+    no_of_nodes2=igraph_vcount(graph2);
+  long int no_of_edges1=igraph_ecount(graph1),
+    no_of_edges2=igraph_ecount(graph2);
+  igraph_vector_t my_inneis_1, my_outneis_1, my_inneis_2, my_outneis_2;
+  igraph_vector_t *inneis_1 = &my_inneis_1, *outneis_1 = &my_outneis_1,
+ 		  *inneis_2 = &my_inneis_2, *outneis_2 = &my_outneis_2;
+
+  /* Sanity check for graph sizes (graph1 must be larger) */
+  if (no_of_nodes1 < no_of_nodes2 || 
+      no_of_edges1 < no_of_edges2) {
+    return 0;
+  }
+
+  /* Sanity checks for specified vertex and edge colors */
+  if ( (vertex_color1 && !vertex_color2) || (!vertex_color1 && vertex_color2) ) {
+    IGRAPH_WARNING("Only one graph is vertex colored, colors will be ignored");
+    vertex_color1=vertex_color2=0;
+  }
+  if ( (edge_color1 && !edge_color2) || (!edge_color1 && edge_color2) ) {
+    IGRAPH_WARNING("Only one graph is edge colored, colors will be ignored");
+    edge_color1=edge_color2=0;
+  }
+  if (vertex_color1) {
+    if (igraph_vector_int_size(vertex_color1) != no_of_nodes1 ||
+	igraph_vector_int_size(vertex_color2) != no_of_nodes2) {
+      IGRAPH_ERROR("Invalid vertex color vector length", IGRAPH_EINVAL);
+    }
+  }
+  if (edge_color1) {
+    if (igraph_vector_int_size(edge_color1) != no_of_edges1 ||
+	igraph_vector_int_size(edge_color2) != no_of_edges2) {
+      IGRAPH_ERROR("Invalid edge color vector length", IGRAPH_EINVAL);
+    }
+  }
+
+  IGRAPH_VECTOR_INIT_FINALLY(inneis_1, 1); /* will be resized*/
+  IGRAPH_VECTOR_INIT_FINALLY(inneis_2, 1);
+  IGRAPH_VECTOR_INIT_FINALLY(outneis_1, 1);
+  IGRAPH_VECTOR_INIT_FINALLY(outneis_2, 1);
+
+  igraph_bool_t end = 0;
+  igraph_integer_t v1, v2, i;
+  if (map12 != NULL) {
+    /* TODO */
+  } else if (map21 != NULL) {
+    for (v2 = 0; !end && v2 < no_of_nodes2; v2++) {
+      v1 = VECTOR(*map21)[v2];
+
+      /* Check vertex colors */
+      if (vertex_color1 && (VECTOR(*vertex_color1)[v1] != VECTOR(*vertex_color2)[v2])) {
+	end = 1;
+      }
+      if (!end && node_compat_fn && !node_compat_fn(graph1, graph2,
+					    (igraph_integer_t) v1,
+					    (igraph_integer_t) v2, arg)) {
+	end = 1;
+      }
+
+      /* Fetch in-neighbors of v1 and v2 */
+      IGRAPH_CHECK(igraph_neighbors(graph1, inneis_1, v1, IGRAPH_IN));
+      IGRAPH_CHECK(igraph_neighbors(graph2, inneis_2, v2, IGRAPH_IN));
+
+      /* Check all in-edges that are present in graph2 for existence in graph1 */
+      for (i = 0; !end && i < igraph_vector_size(inneis_2); i++) {
+	long int v2nei = (long int) VECTOR(*inneis_2)[i];
+	long int v1nei = (long int) VECTOR(*map21)[v2nei];
+	/* There is an edge v2<-v2nei in graph2, check for v1<-v1nei edge in graph1 */
+	if (!igraph_vector_binsearch2(inneis_1, v1nei)) {
+	  end = 1;
+	} else if (edge_color1 || edge_compat_fn) {
+	  /* Check the color of the edge */
+	  igraph_integer_t eid1, eid2;
+	  igraph_get_eid(graph1, &eid1, (igraph_integer_t) v1nei,
+		   (igraph_integer_t) v1, /*directed=*/ 1,
+		   /*error=*/ 1);
+	  igraph_get_eid(graph2, &eid2, (igraph_integer_t) v2nei,
+		   (igraph_integer_t) v2, /*directed=*/ 1,
+		   /*error=*/ 1);
+	  if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
+	      VECTOR(*edge_color2)[(long int)eid2]) {
+	    end = 1;
+	  }
+	  if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
+					  eid1, eid2, arg)) {
+	    end = 1;
+	  }
+	}
+      }
+
+      /* Check all in-edges that are present in the subgraph of graph1
+       * induced by the target nodes of map21 for existence in graph1 */
+      for (i = 0; !end && i < igraph_vector_size(inneis_1); i++) {
+	long int v1nei = (long int) VECTOR(*inneis_1)[i];
+	long int v2nei;
+	if (!igraph_vector_search(map21, 0, v1nei, &v2nei)) {
+	  continue; /* v1nei is not part of the mapping */
+	}
+	/* Check for v2<-v2nei edge in graph2 */
+	if (!igraph_vector_binsearch2(inneis_2, v2nei)) {
+	  end = 1;
+	} else if (edge_color1 || edge_compat_fn) {
+	  /* Check the color of the edge */
+	  igraph_integer_t eid1, eid2;
+	  igraph_get_eid(graph1, &eid1, (igraph_integer_t) v1nei,
+		   (igraph_integer_t) v1, /*directed=*/ 1,
+		   /*error=*/ 1);
+	  igraph_get_eid(graph2, &eid2, (igraph_integer_t) v2nei,
+		   (igraph_integer_t) v2, /*directed=*/ 1,
+		   /*error=*/ 1);
+	  if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
+	      VECTOR(*edge_color2)[(long int)eid2]) {
+	    end = 1;
+	  }
+	  if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
+					  eid1, eid2, arg)) {
+	    end = 1;
+	  }
+	}
+      }
+
+      /* Fetch out-neighbors of v1 and v2 */
+      IGRAPH_CHECK(igraph_neighbors(graph1, outneis_1, v1, IGRAPH_OUT));
+      IGRAPH_CHECK(igraph_neighbors(graph2, outneis_2, v2, IGRAPH_OUT));
+
+      /* Check all out-edges that are present in graph2 for existence in graph1 */
+      for (i = 0; !end && i < igraph_vector_size(outneis_2); i++) {
+	long int v2nei = (long int) VECTOR(*outneis_2)[i];
+	long int v1nei = (long int) VECTOR(*map21)[v2nei];
+	/* There is an edge v2->v2nei in graph2, check for v1->v1nei edge in graph1 */
+	if (!igraph_vector_binsearch2(outneis_1, v1nei)) {
+	  end = 1;
+	} else if (edge_color1 || edge_compat_fn) {
+	  /* Check the color of the edge */
+	  igraph_integer_t eid1, eid2;
+	  igraph_get_eid(graph1, &eid1, (igraph_integer_t) v1,
+		   (igraph_integer_t) v1nei, /*directed=*/ 1,
+		   /*error=*/ 1);
+	  igraph_get_eid(graph2, &eid2, (igraph_integer_t) v2,
+		   (igraph_integer_t) v2nei, /*directed=*/ 1,
+		   /*error=*/ 1);
+	  if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
+	      VECTOR(*edge_color2)[(long int)eid2]) {
+	    end = 1;
+	  }
+	  if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
+					  eid1, eid2, arg)) {
+	    end = 1;
+	  }
+	}
+      }
+
+      /* Check all out-edges that are present in the subgraph of graph1
+       * induced by the target nodes of map21 for existence in graph1 */
+      for (i = 0; !end && i < igraph_vector_size(outneis_1); i++) {
+	long int v1nei = (long int) VECTOR(*outneis_1)[i];
+	long int v2nei;
+	if (!igraph_vector_search(map21, 0, v1nei, &v2nei)) {
+	  continue; /* v1nei is not part of the mapping */
+	}
+	/* Check for v2->v2nei edge in graph2 */
+	if (!igraph_vector_binsearch2(outneis_2, v2nei)) {
+	  end = 1;
+	} else if (edge_color1 || edge_compat_fn) {
+	  /* Check the color of the edge */
+	  igraph_integer_t eid1, eid2;
+	  igraph_get_eid(graph1, &eid1, (igraph_integer_t) v1,
+		   (igraph_integer_t) v1nei, /*directed=*/ 1,
+		   /*error=*/ 1);
+	  igraph_get_eid(graph2, &eid2, (igraph_integer_t) v2,
+		   (igraph_integer_t) v2nei, /*directed=*/ 1,
+		   /*error=*/ 1);
+	  if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
+	      VECTOR(*edge_color2)[(long int)eid2]) {
+	    end = 1;
+	  }
+	  if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
+					  eid1, eid2, arg)) {
+	    end = 1;
+	  }
+	}
+      }
+    }
+  }
+
+  igraph_vector_destroy(inneis_1);
+  igraph_vector_destroy(inneis_2);
+  igraph_vector_destroy(outneis_1);
+  igraph_vector_destroy(outneis_2);
+  IGRAPH_FINALLY_CLEAN(4);
+
+  if (end) {
+    *iso = 0;
+  } else {
+    *iso = 1;
+  }
+  return 0;
+}
+
+/**
  * \function igraph_subisomorphic_function_vf2
  * Generic VF2 function for subgraph isomorphism problems
  * 
@@ -2244,7 +2493,29 @@ int igraph_subisomorphic_function_vf2(const igraph_t *graph1,
 
       for (i=0; !end && i<igraph_vector_size(inneis_1); i++) {
 	long int node=(long int) VECTOR(*inneis_1)[i];
-	if (VECTOR(*core_1)[node] < 0) {
+	if (VECTOR(*core_1)[node] >= 0) {
+	  long int node2=(long int) VECTOR(*core_1)[node];
+	  /* check if there is a node2->cand2 edge */
+	  if (!igraph_vector_binsearch2(inneis_2, node2)) {
+	    end=1;
+	  } else if (edge_color1 || edge_compat_fn) {
+	    igraph_integer_t eid1, eid2;
+	    igraph_get_eid(graph1, &eid1, (igraph_integer_t) node,
+			   (igraph_integer_t) cand1, /*directed=*/ 1,
+			   /*error=*/ 1);
+	    igraph_get_eid(graph2, &eid2, (igraph_integer_t) node2,
+			   (igraph_integer_t) cand2, /*directed=*/ 1,
+			   /*error=*/ 1);
+	    if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
+		VECTOR(*edge_color2)[(long int)eid2]) {
+	      end=1;
+	    }
+	    if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
+						  eid1, eid2, arg)) {
+	      end=1;
+	    }
+	  }
+	} else {
 	  if (VECTOR(in_1)[node] != 0) {
 	    xin1++;
 	  }
@@ -2255,7 +2526,29 @@ int igraph_subisomorphic_function_vf2(const igraph_t *graph1,
       }
       for (i=0; !end && i<igraph_vector_size(outneis_1); i++) {
 	long int node=(long int) VECTOR(*outneis_1)[i];
-	if (VECTOR(*core_1)[node] < 0) {
+	if (VECTOR(*core_1)[node] >= 0) {
+	  long int node2=(long int) VECTOR(*core_1)[node];
+	  /* check if there is a cand2->node2 edge */
+	  if (!igraph_vector_binsearch2(outneis_2, node2)) {
+	    end=1;
+	  } else if (edge_color1 || edge_compat_fn) {
+	    igraph_integer_t eid1, eid2;
+	    igraph_get_eid(graph1, &eid1, (igraph_integer_t) cand1,
+			   (igraph_integer_t) node, /*directed=*/ 1,
+			   /*error=*/ 1);
+	    igraph_get_eid(graph2, &eid2, (igraph_integer_t) cand2,
+			   (igraph_integer_t) node2, /*directed=*/ 1,
+			   /*error=*/ 1);
+	    if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
+		VECTOR(*edge_color2)[(long int)eid2]) {
+	      end=1;
+	    }
+	    if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
+						  eid1, eid2, arg)) {
+	      end=1;
+	    }
+	  }
+	} else {
 	  if (VECTOR(in_1)[node] != 0) {
 	    xin1++;
 	  }

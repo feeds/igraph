@@ -72,6 +72,7 @@
 #include "igraph_conversion.h"
 #include "igraph_foreign.h"
 #include "igraph_motifs.h"
+#include "igraph_fsm.h"
 #include "igraph_operators.h"
 #include "igraph_flow.h"
 #include "igraph_nongraph.h"

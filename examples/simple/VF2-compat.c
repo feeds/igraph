@@ -197,9 +197,38 @@ int match_rings_open_closed() {
   return 0;  
 }
 
+int matching_functions() {
+  igraph_t g1, g2, g3;
+  igraph_vector_t map21, edges1, edges2, edges3;
+  igraph_bool_t iso;
+
+  igraph_real_t my_map21[3] = {0, 1, 2};
+  igraph_real_t my_edges1[8] = {0,1, 0,2, 0,3, 1,2};
+  igraph_real_t my_edges2[4] = {0,1, 0,2};
+  igraph_real_t my_edges3[6] = {0,1, 0,2, 1,2};
+
+  igraph_vector_init_copy(&map21, my_map21, 3);
+  igraph_vector_init_copy(&edges1, my_edges1, 8);
+  igraph_vector_init_copy(&edges2, my_edges2, 4);
+  igraph_vector_init_copy(&edges3, my_edges3, 6);
+
+  igraph_create(&g1, &edges1, 4, 0);
+  igraph_create(&g2, &edges2, 3, 0);
+  igraph_create(&g3, &edges3, 3, 0);
+
+  igraph_is_subisomorphism(0, &map21, &g1, &g2, 0, 0, 0, 0, 0, 0, 0, &iso);
+  if (iso) { exit(41); }
+
+  igraph_is_subisomorphism(0, &map21, &g1, &g3, 0, 0, 0, 0, 0, 0, 0, &iso);
+  if (!iso) { exit(42); }
+
+  return 0;
+}
+
 /* ----------------------------------------------------------- */
 
 int main() {
+  matching_functions();
   match_rings();
   match_rings_open_closed();
   return 0;
