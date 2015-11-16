@@ -126,19 +126,19 @@ int match_rings_open_closed() {
   igraph_ring(&ro, 10, /*directed=*/ 0, /*mutual=*/ 0, /*circular=*/ 0);
   igraph_ring(&rc, 10, /*directed=*/ 0, /*mutual=*/ 0, /*circular=*/ 1);  
 
-  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
 			   &iso, /*map12=*/ 0, /*map21=*/ 0, 
 			   /*node_compat_fn=*/ 0, /*edge_compat_fn=*/ 0, 
 			   /*arg=*/ 0);
   if (!iso) { exit(31); }
 
-  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
 			   &iso, /*map12=*/ 0, /*map21=*/ 0, 
 			   compat_parity, /*edge_compat_fn=*/ 0, 
 			   /*arg=*/ 0);
   if (!iso) { exit(32); }
 
-  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
 			   &iso, /*map12=*/ 0, /*map21=*/ 0, 
 			   compat_not0, /*edge_compat_fn=*/ 0, 
 			   /*arg=*/ 0);
@@ -146,13 +146,13 @@ int match_rings_open_closed() {
   
   /* ------- */ 
 
-  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
 			   &iso, /*map12=*/ 0, /*map21=*/ 0, 
 			   /*node_compat_fn=*/ 0, compat_parity,
 			   /*arg=*/ 0);
   if (!iso) { exit(34); }
 
-  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_subisomorphic_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
 			   &iso, /*map12=*/ 0, /*map21=*/ 0, 
 			   /*node_compat_fn=*/ 0, compat_not0,
 			   /*arg=*/ 0);
@@ -160,19 +160,19 @@ int match_rings_open_closed() {
 
   /* ------- */
 
-  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
   				   &count, /*node_compat_fn=*/ 0,
   				   /*edge_compat_fn=*/ 0, /*arg=*/ 0);
   
   if (count != 20) { exit(36); }
 
-  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
   				   &count, compat_parity,
   				   /*edge_compat_fn=*/ 0, /*arg=*/ 0);
 
   if (count != 10) { exit(37); }
 
-  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
   				   &count, compat_not0, /*edge_compat_fn=*/ 0,
   				   /*arg=*/ 0);
 
@@ -180,13 +180,13 @@ int match_rings_open_closed() {
 
   /* ------- */ 
 
-  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
 				   &count, /*node_compat_fn=*/ 0, 
 				   compat_parity, /*arg=*/ 0);
   
   if (count != 10) { exit(39); }
 
-  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0,
+  igraph_count_subisomorphisms_vf2(&rc, &ro, /*colors(4x)*/ 0, 0, 0, 0, /* induced= */ 0,
 				   &count, /*node_compat_fn=*/ 0, compat_not0,
 				   /*arg=*/ 0);
 
@@ -216,10 +216,10 @@ int matching_functions() {
   igraph_create(&g2, &edges2, 3, 0);
   igraph_create(&g3, &edges3, 3, 0);
 
-  igraph_is_subisomorphism(0, &map21, &g1, &g2, 0, 0, 0, 0, 0, 0, 0, &iso);
+  igraph_is_subisomorphism(0, &map21, &g1, &g2, 0, 0, 0, 0, 0, 0, 0, 0, &iso);
   if (iso) { exit(41); }
 
-  igraph_is_subisomorphism(0, &map21, &g1, &g3, 0, 0, 0, 0, 0, 0, 0, &iso);
+  igraph_is_subisomorphism(0, &map21, &g1, &g3, 0, 0, 0, 0, 0, 0, 0, 0, &iso);
   if (!iso) { exit(42); }
 
   return 0;

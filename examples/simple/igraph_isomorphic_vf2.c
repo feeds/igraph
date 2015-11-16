@@ -138,7 +138,7 @@ int main() {
   /* One color */
   igraph_vector_int_init(&color1, igraph_vcount(&ring1));
   igraph_vector_int_init(&color2, igraph_vcount(&ring2));
-  igraph_count_subisomorphisms_vf2(&ring1, &ring2, &color1, &color2, 0, 0, 
+  igraph_count_subisomorphisms_vf2(&ring1, &ring2, &color1, &color2, 0, 0, /*induced=*/ 0,
 				   &count, 0, 0, 0);
   if (count != 42) {
     fprintf(stderr, "Count with one color failed, expected %li, got %li.\n",
@@ -155,7 +155,7 @@ int main() {
     VECTOR(color2)[i]   = 0;
     VECTOR(color2)[i+1] = 1;
   }
-  igraph_count_subisomorphisms_vf2(&ring1, &ring2, &color1, &color2, 0, 0, 
+  igraph_count_subisomorphisms_vf2(&ring1, &ring2, &color1, &color2, 0, 0, /*induced=*/ 0,
 				   &count, 0, 0, 0);
   if (count != 21) {
     fprintf(stderr, "Count with two colors failed, expected %li, got %li.\n",
@@ -248,7 +248,7 @@ int main() {
   /* One color */
   igraph_vector_int_init(&color1, igraph_ecount(&ring1));
   igraph_vector_int_init(&color2, igraph_ecount(&ring2));
-  igraph_count_subisomorphisms_vf2(&ring1, &ring2, 0, 0, &color1, &color2,
+  igraph_count_subisomorphisms_vf2(&ring1, &ring2, 0, 0, &color1, &color2, /*induced=*/ 0,
 				   &count, 0, 0, 0);
   if (count != 42) {
     fprintf(stderr, "Count with one edge color failed, expected %li, got %li.\n",
@@ -265,7 +265,7 @@ int main() {
     VECTOR(color2)[i]   = 0;
     VECTOR(color2)[i+1] = 1;
   }
-  igraph_count_subisomorphisms_vf2(&ring1, &ring2, 0, 0, &color1, &color2,
+  igraph_count_subisomorphisms_vf2(&ring1, &ring2, 0, 0, &color1, &color2, /*induced=*/ 0,
 				   &count, 0, 0, 0);
   if (count != 22) {
     fprintf(stderr, "Count with two edge colors failed, expected %li, got %li.\n",

@@ -1905,9 +1905,9 @@ int igraph_get_isomorphisms_vf2(const igraph_t *graph1,
  */
 
 int igraph_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
-			 igraph_bool_t *iso) {
+			 igraph_bool_t induced, igraph_bool_t *iso) {
 
-  return igraph_subisomorphic_vf2(graph1, graph2, 0, 0, 0, 0, iso, 0, 0, 0, 0, 0);
+  return igraph_subisomorphic_vf2(graph1, graph2, 0, 0, 0, 0, induced, iso, 0, 0, 0, 0, 0);
 }
 
 /**
@@ -1956,6 +1956,7 @@ int igraph_is_subisomorphism(igraph_vector_t *map12,
 				      const igraph_vector_int_t *vertex_color2,
 				      const igraph_vector_int_t *edge_color1,
 				      const igraph_vector_int_t *edge_color2,
+				      igraph_bool_t induced,
 				      igraph_isocompat_t *node_compat_fn,
 				      igraph_isocompat_t *edge_compat_fn,
 				      void *arg,
@@ -2215,6 +2216,7 @@ int igraph_subisomorphic_function_vf2(const igraph_t *graph1,
 				      const igraph_vector_int_t *vertex_color2,
 				      const igraph_vector_int_t *edge_color1,
 				      const igraph_vector_int_t *edge_color2,
+				      igraph_bool_t induced,
 				      igraph_vector_t *map12,
 				      igraph_vector_t *map21,
 				      igraph_isohandler_t *isohandler_fn,
@@ -2491,72 +2493,77 @@ int igraph_subisomorphic_function_vf2(const igraph_t *graph1,
 	end=1;
       }
 
-      for (i=0; !end && i<igraph_vector_size(inneis_1); i++) {
-	long int node=(long int) VECTOR(*inneis_1)[i];
-	if (VECTOR(*core_1)[node] >= 0) {
-	  long int node2=(long int) VECTOR(*core_1)[node];
-	  /* check if there is a node2->cand2 edge */
-	  if (!igraph_vector_binsearch2(inneis_2, node2)) {
-	    end=1;
-	  } else if (edge_color1 || edge_compat_fn) {
-	    igraph_integer_t eid1, eid2;
-	    igraph_get_eid(graph1, &eid1, (igraph_integer_t) node,
-			   (igraph_integer_t) cand1, /*directed=*/ 1,
-			   /*error=*/ 1);
-	    igraph_get_eid(graph2, &eid2, (igraph_integer_t) node2,
-			   (igraph_integer_t) cand2, /*directed=*/ 1,
-			   /*error=*/ 1);
-	    if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
-		VECTOR(*edge_color2)[(long int)eid2]) {
+      if (induced) {
+        // check if all edges between g1 nodes exist in g2
+        for (i=0; !end && i<igraph_vector_size(inneis_1); i++) {
+	  long int node=(long int) VECTOR(*inneis_1)[i];
+	  if (VECTOR(*core_1)[node] >= 0) {
+	    long int node2=(long int) VECTOR(*core_1)[node];
+	    /* check if there is a node2->cand2 edge */
+	    if (!igraph_vector_binsearch2(inneis_2, node2)) {
 	      end=1;
+	    } else if (edge_color1 || edge_compat_fn) {
+	      igraph_integer_t eid1, eid2;
+	      igraph_get_eid(graph1, &eid1, (igraph_integer_t) node,
+			     (igraph_integer_t) cand1, /*directed=*/ 1,
+			     /*error=*/ 1);
+	      igraph_get_eid(graph2, &eid2, (igraph_integer_t) node2,
+			     (igraph_integer_t) cand2, /*directed=*/ 1,
+			     /*error=*/ 1);
+	      if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
+		  VECTOR(*edge_color2)[(long int)eid2]) {
+	        end=1;
+	      }
+	      if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
+						    eid1, eid2, arg)) {
+	        end=1;
+	      }
 	    }
-	    if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
-						  eid1, eid2, arg)) {
-	      end=1;
+	  } else {
+	    if (VECTOR(in_1)[node] != 0) {
+	      xin1++;
 	    }
-	  }
-	} else {
-	  if (VECTOR(in_1)[node] != 0) {
-	    xin1++;
-	  }
-	  if (VECTOR(out_1)[node] != 0) {
-	    xout1++;
-	  }
-	}
-      }
-      for (i=0; !end && i<igraph_vector_size(outneis_1); i++) {
-	long int node=(long int) VECTOR(*outneis_1)[i];
-	if (VECTOR(*core_1)[node] >= 0) {
-	  long int node2=(long int) VECTOR(*core_1)[node];
-	  /* check if there is a cand2->node2 edge */
-	  if (!igraph_vector_binsearch2(outneis_2, node2)) {
-	    end=1;
-	  } else if (edge_color1 || edge_compat_fn) {
-	    igraph_integer_t eid1, eid2;
-	    igraph_get_eid(graph1, &eid1, (igraph_integer_t) cand1,
-			   (igraph_integer_t) node, /*directed=*/ 1,
-			   /*error=*/ 1);
-	    igraph_get_eid(graph2, &eid2, (igraph_integer_t) cand2,
-			   (igraph_integer_t) node2, /*directed=*/ 1,
-			   /*error=*/ 1);
-	    if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
-		VECTOR(*edge_color2)[(long int)eid2]) {
-	      end=1;
-	    }
-	    if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
-						  eid1, eid2, arg)) {
-	      end=1;
+	    if (VECTOR(out_1)[node] != 0) {
+	      xout1++;
 	    }
 	  }
-	} else {
-	  if (VECTOR(in_1)[node] != 0) {
-	    xin1++;
+        }
+        for (i=0; !end && i<igraph_vector_size(outneis_1); i++) {
+	  long int node=(long int) VECTOR(*outneis_1)[i];
+	  if (VECTOR(*core_1)[node] >= 0) {
+	    long int node2=(long int) VECTOR(*core_1)[node];
+	    /* check if there is a cand2->node2 edge */
+	    if (!igraph_vector_binsearch2(outneis_2, node2)) {
+	      end=1;
+	    } else if (edge_color1 || edge_compat_fn) {
+	      igraph_integer_t eid1, eid2;
+	      igraph_get_eid(graph1, &eid1, (igraph_integer_t) cand1,
+			     (igraph_integer_t) node, /*directed=*/ 1,
+			     /*error=*/ 1);
+	      igraph_get_eid(graph2, &eid2, (igraph_integer_t) cand2,
+			     (igraph_integer_t) node2, /*directed=*/ 1,
+			     /*error=*/ 1);
+	      if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
+		  VECTOR(*edge_color2)[(long int)eid2]) {
+	        end=1;
+	      }
+	      if (edge_compat_fn && !edge_compat_fn(graph1, graph2,
+						    eid1, eid2, arg)) {
+	        end=1;
+	      }
+	    }
+	  } else {
+	    if (VECTOR(in_1)[node] != 0) {
+	      xin1++;
+	    }
+	    if (VECTOR(out_1)[node] != 0) {
+	      xout1++;
+	    }
 	  }
-	  if (VECTOR(out_1)[node] != 0) {
-	    xout1++;
-	  }
-	}
-      }      
+        }
+      } // if (induced) ...
+
+      // check if all edges between g2 nodes exist in g1
       for (i=0; !end && i<igraph_vector_size(inneis_2); i++) {
 	long int node=(long int) VECTOR(*inneis_2)[i];
 	if (VECTOR(*core_2)[node] >= 0) {
@@ -2778,6 +2785,7 @@ int igraph_subisomorphic_vf2(const igraph_t *graph1, const igraph_t *graph2,
 			     const igraph_vector_int_t *vertex_color2,
 			     const igraph_vector_int_t *edge_color1,
 			     const igraph_vector_int_t *edge_color2,
+			     igraph_bool_t induced,
 			     igraph_bool_t *iso, igraph_vector_t *map12, 
 			     igraph_vector_t *map21,
 			     igraph_isocompat_t *node_compat_fn,
@@ -2791,7 +2799,7 @@ int igraph_subisomorphic_vf2(const igraph_t *graph1, const igraph_t *graph2,
   *iso=0;
   IGRAPH_CHECK(igraph_subisomorphic_function_vf2(graph1, graph2, 
 						 vertex_color1, vertex_color2,
-						 edge_color1, edge_color2,
+						 edge_color1, edge_color2, induced,
 						 map12, map21,
 						 (igraph_isohandler_t *)
 						 igraph_i_subisomorphic_vf2,
@@ -2857,6 +2865,7 @@ int igraph_count_subisomorphisms_vf2(const igraph_t *graph1, const igraph_t *gra
 				     const igraph_vector_int_t *vertex_color2,
 				     const igraph_vector_int_t *edge_color1,
 				     const igraph_vector_int_t *edge_color2,
+				     igraph_bool_t induced,
 				     igraph_integer_t *count,
 				     igraph_isocompat_t *node_compat_fn,
 				     igraph_isocompat_t *edge_compat_fn,
@@ -2870,7 +2879,7 @@ int igraph_count_subisomorphisms_vf2(const igraph_t *graph1, const igraph_t *gra
   IGRAPH_CHECK(igraph_subisomorphic_function_vf2(graph1, graph2, 
 					 vertex_color1, vertex_color2, 
 					 edge_color1, edge_color2,
-					 0, 0,
+					 induced, 0, 0,
 					 (igraph_isohandler_t*)
 					 igraph_i_count_subisomorphisms_vf2,
 					 ncb, ecb, &data));
@@ -2958,6 +2967,7 @@ int igraph_get_subisomorphisms_vf2(const igraph_t *graph1,
 				   const igraph_vector_int_t *vertex_color2,
 				   const igraph_vector_int_t *edge_color1,
 				   const igraph_vector_int_t *edge_color2,
+				   igraph_bool_t induced,
 				   igraph_vector_ptr_t *maps,
 				   igraph_isocompat_t *node_compat_fn,
 				   igraph_isocompat_t *edge_compat_fn,
@@ -2972,7 +2982,7 @@ int igraph_get_subisomorphisms_vf2(const igraph_t *graph1,
   IGRAPH_CHECK(igraph_subisomorphic_function_vf2(graph1, graph2, 
 					 vertex_color1, vertex_color2,
 					 edge_color1, edge_color2,
-					 0, 0,
+					 induced, 0, 0,
 					 (igraph_isohandler_t*)
 					 igraph_i_get_subisomorphisms_vf2,
 					 ncb, ecb, &data));
