@@ -27,14 +27,14 @@ int match_rings() {
   igraph_mib_support(&rc, &ro, 0, 0, 0, 0, 0, 0, &supp);
   printf("mib %d\n\n", supp);
 
-  igraph_mib_support_fast(&ro, &ro, 0, 0, 0, 0, 0, 0, &supp);
-  printf("mibF %d\n", supp);
+  igraph_mib_support_slow(&ro, &ro, 0, 0, 0, 0, 0, 0, &supp);
+  printf("mibS %d\n", supp);
 
-  igraph_mib_support_fast(&rc, &rc, 0, 0, 0, 0, 0, 0, &supp);
-  printf("mibF %d\n", supp);
+  igraph_mib_support_slow(&rc, &rc, 0, 0, 0, 0, 0, 0, &supp);
+  printf("mibS %d\n", supp);
 
-  igraph_mib_support_fast(&rc, &ro, 0, 0, 0, 0, 0, 0, &supp);
-  printf("mibF %d\n\n", supp);
+  igraph_mib_support_slow(&rc, &ro, 0, 0, 0, 0, 0, 0, &supp);
+  printf("mibS %d\n\n", supp);
 
   igraph_destroy(&ro);
   igraph_destroy(&rc);

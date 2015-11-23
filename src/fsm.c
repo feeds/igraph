@@ -63,7 +63,7 @@ igraph_bool_t igraph_i_mib_isohandler(const igraph_vector_t *map12,
 
 
 /* graph1 is the larger graph, graph2 is the smaller graph */
-int igraph_mib_support(const igraph_t *graph1,
+int igraph_mib_support_slow(const igraph_t *graph1,
 		       const igraph_t *graph2,
 		       const igraph_vector_int_t *vertex_color1,
 		       const igraph_vector_int_t *vertex_color2,
@@ -191,10 +191,12 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     }
 
     // check edges to other fixed assignments
-    IGRAPH_CHECK(igraph_neighbors(graph1, &inneighs1, (igraph_integer_t) target_node, IGRAPH_IN));
-    IGRAPH_CHECK(igraph_neighbors(graph2, &inneighs2, (igraph_integer_t) pattern_node, IGRAPH_IN));
-    IGRAPH_CHECK(igraph_neighbors(graph1, &outneighs1, (igraph_integer_t) target_node, IGRAPH_OUT));
-    IGRAPH_CHECK(igraph_neighbors(graph2, &outneighs2, (igraph_integer_t) pattern_node, IGRAPH_OUT));
+    if (!end) {
+      IGRAPH_CHECK(igraph_neighbors(graph1, &inneighs1, (igraph_integer_t)target_node, IGRAPH_IN));
+      IGRAPH_CHECK(igraph_neighbors(graph2, &inneighs2, (igraph_integer_t)pattern_node, IGRAPH_IN));
+      IGRAPH_CHECK(igraph_neighbors(graph1, &outneighs1, (igraph_integer_t)target_node, IGRAPH_OUT));
+      IGRAPH_CHECK(igraph_neighbors(graph2, &outneighs2, (igraph_integer_t)pattern_node, IGRAPH_OUT));
+    }
     for (j = 0; !end && j < i; j++) {
       other_pattern_node = VECTOR(node_ordering)[j];
       other_target_node = VECTOR(*map21)[pattern_node];
@@ -408,16 +410,16 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	  VECTOR(partial_solution_stack)[stack_pos]++; // try next parent
 	}
       }
-    }
-  }
+    } // DFS
+  } // if (!end)
 
-  if (!end && success && stack_pos == vcount2-1) {
+  if (!end && success) {
     *iso = 1;
-    if (map21 != NULL) {
-      for (i = 0; i < vcount2; i++) {
-	VECTOR(*map21)[(long int) VECTOR(node_ordering)[i]] = VECTOR(partial_solution_stack)[i];
-      }
-    }
+    //if (map21 != NULL) {
+    //  for (i = 0; i < vcount2; i++) {
+    //    VECTOR(*map21)[(long int) VECTOR(node_ordering)[i]] = VECTOR(partial_solution_stack)[i];
+    //  }
+    //}
   }
 
   igraph_vector_destroy(&node_ordering);
@@ -436,7 +438,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
 
 /* graph1 is the larger graph, graph2 is the smaller graph */
-int igraph_mib_support_fast(const igraph_t *graph1,
+int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_t *graph2,
 		       const igraph_vector_int_t *vertex_color1,
 		       const igraph_vector_int_t *vertex_color2,
@@ -452,9 +454,9 @@ int igraph_mib_support_fast(const igraph_t *graph1,
 
   IGRAPH_CHECK(igraph_vector_init(&target_counts, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&map21, vcount2));
+  igraph_vector_fill(&map21, -1.);
   for (i = 0; i < vcount2; i++) {
     for (j = 0; j < vcount1; j++) {
-      igraph_vector_fill(&map21, -1.);
       VECTOR(map21)[i] = j; // force assignment: pattern node i -> target node j
       iso = 0;
       if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
@@ -467,6 +469,7 @@ int igraph_mib_support_fast(const igraph_t *graph1,
 	VECTOR(target_counts)[i] = VECTOR(target_counts)[i] + 1;
       }
     }
+    VECTOR(map21)[i] = -1; // release forced assignment
   }
 
   *support = igraph_vector_min(&target_counts);
