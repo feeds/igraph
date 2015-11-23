@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include "igraph_fsm.h"
 #include "igraph_matrix.h"
+#include "igraph_stack.h"
 #include "igraph_interface.h"
 
 /* graph1 is the larger graph, graph2 is the smaller graph */
@@ -108,50 +109,55 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 			   const igraph_vector_int_t *edge_color1,
 			   const igraph_vector_int_t *edge_color2,
 			   igraph_bool_t induced,
-			   igraph_vector_t *map21,
+			   igraph_vector_t *fixed,
 			   igraph_bool_t *iso) {
   long int vcount1 = igraph_vcount(graph1);
   long int vcount2 = igraph_vcount(graph2);
-  long int fixed_count = 0;
-  long int i, j, k, stack_pos;
+  long int i, j, fixed_count, stack_pos;
   int end = 0, success = 1;
   long int pattern_node, other_pattern_node, target_node, other_target_node;
-  igraph_vector_t indeg1, indeg2, outdeg1, outdeg2, inneighs1, inneighs2, outneighs1, outneighs2;
+  igraph_vector_t indeg1, indeg2, outdeg1, outdeg2;
+  igraph_vector_t inneighs1, inneighs2, outneighs1, outneighs2, neighs;
   igraph_vector_t node_ordering;
+  igraph_vector_t visited;
   igraph_vector_t partial_solution_stack;
+  igraph_stack_t dfs_stack;
   igraph_integer_t eid1, eid2;
 
   *iso = 0;
 
-  // create a static ordering of the pattern nodes: fixed assignments come first,
-  // followed by all other nodes in arbitrary order (here: reversed for simplicity)
+  // create a static ordering of the pattern nodes by DFS
+  // if a fixed assignment is given, use this node as root, otherwise take the one with index 0
+  IGRAPH_CHECK(igraph_stack_init(&dfs_stack, vcount2*vcount2)); // allocate enough memory (V^2)
   IGRAPH_CHECK(igraph_vector_init(&node_ordering, vcount2));
-  if (map21 == NULL) {
-    // no fixed nodes specified
-    for (i = 0; i < vcount2; i++) {
-      VECTOR(node_ordering)[i] = vcount2-1-i;
-    }
+  IGRAPH_CHECK(igraph_vector_init(&visited, vcount2));
+  IGRAPH_CHECK(igraph_vector_init(&neighs, 0));
+  if (fixed == NULL) {
+    IGRAPH_CHECK(igraph_stack_push(&dfs_stack, 0));
     fixed_count = 0;
   } else {
-    // possibly fixed nodes specified (but can also be -1 everywhere)
-    i = 0; // index in node_ordering
-    j = vcount2-1; // reverse index in node_ordering
-    for (k = 0; k < vcount2; k++) {
-      if ((int)VECTOR(*map21)[k] == -1) {
-      	VECTOR(node_ordering)[j] = k;
-      	j--;
-      } else {
-      	VECTOR(node_ordering)[i] = k;
-      	i++;
+    IGRAPH_CHECK(igraph_stack_push(&dfs_stack, VECTOR(*fixed)[0]));
+    fixed_count = 1;
+  }
+  // perform DFS
+  i = 0;
+  while (!igraph_stack_empty(&dfs_stack)) {
+    pattern_node = (long int) igraph_stack_pop(&dfs_stack);
+    if (VECTOR(visited)[pattern_node] == 0) {
+      // insert current node into ordering
+      VECTOR(node_ordering)[i] = pattern_node;
+      VECTOR(visited)[pattern_node] = 1;
+      i++;
+
+      // add neighbors to stack
+      IGRAPH_CHECK(igraph_neighbors(graph2, &neighs, (igraph_integer_t)pattern_node, IGRAPH_ALL));
+      for (j = 0; j < igraph_vector_size(&neighs); j++) {
+	IGRAPH_CHECK(igraph_stack_push(&dfs_stack, VECTOR(neighs)[j]));
       }
     }
-    fixed_count = i;
   }
 
-  // STEP 1: check the fixed assignments for consistency and add to partial solution
-
   IGRAPH_CHECK(igraph_vector_init(&partial_solution_stack, vcount2)); // filled with zeros
-  stack_pos = 0;
 
   IGRAPH_CHECK(igraph_vector_init(&indeg1, 0));
   IGRAPH_CHECK(igraph_vector_init(&indeg2, 0));
@@ -163,121 +169,45 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   IGRAPH_CHECK(igraph_vector_init(&outneighs1, 0));
   IGRAPH_CHECK(igraph_vector_init(&outneighs2, 0));
 
-  // iterate over all fixed nodes
-  for (i = 0; !end && i < fixed_count; i++) {
-    pattern_node = VECTOR(node_ordering)[i];
-    target_node = VECTOR(*map21)[pattern_node];
+  // STEP 1: check the fixed assignment for consistency and add to partial solution
 
-    // check colors
+  if (fixed != NULL) {
+    pattern_node = VECTOR(*fixed)[0];
+    target_node = VECTOR(*fixed)[1];
+
+    // check color
     if (vertex_color1 && (VECTOR(*vertex_color1)[target_node]
 			    != VECTOR(*vertex_color2)[pattern_node])) {
       end = 1;
-      break;
     }
 
-    // check degrees
-    IGRAPH_CHECK(igraph_degree(graph1, &indeg1, igraph_vss_1(target_node),
-	    IGRAPH_IN, IGRAPH_LOOPS));
-    IGRAPH_CHECK(igraph_degree(graph2, &indeg2, igraph_vss_1(pattern_node),
-	    IGRAPH_IN, IGRAPH_LOOPS));
-    IGRAPH_CHECK(igraph_degree(graph1, &outdeg1, igraph_vss_1(target_node),
-	    IGRAPH_OUT, IGRAPH_LOOPS));
-    IGRAPH_CHECK(igraph_degree(graph2, &outdeg2, igraph_vss_1(pattern_node),
-	    IGRAPH_OUT, IGRAPH_LOOPS));
-    if (!end && ((VECTOR(indeg1)[0] < VECTOR(indeg2)[0])
-	  || (VECTOR(outdeg1)[0] < VECTOR(outdeg2)[0]))) {
-      end = 1;
-      break;
-    }
-
-    // check edges to other fixed assignments
+    // check degree
     if (!end) {
-      IGRAPH_CHECK(igraph_neighbors(graph1, &inneighs1, (igraph_integer_t)target_node, IGRAPH_IN));
-      IGRAPH_CHECK(igraph_neighbors(graph2, &inneighs2, (igraph_integer_t)pattern_node, IGRAPH_IN));
-      IGRAPH_CHECK(igraph_neighbors(graph1, &outneighs1, (igraph_integer_t)target_node, IGRAPH_OUT));
-      IGRAPH_CHECK(igraph_neighbors(graph2, &outneighs2, (igraph_integer_t)pattern_node, IGRAPH_OUT));
+      IGRAPH_CHECK(igraph_degree(graph1, &indeg1, igraph_vss_1(target_node),
+	      IGRAPH_IN, IGRAPH_LOOPS));
+      IGRAPH_CHECK(igraph_degree(graph2, &indeg2, igraph_vss_1(pattern_node),
+	      IGRAPH_IN, IGRAPH_LOOPS));
+      IGRAPH_CHECK(igraph_degree(graph1, &outdeg1, igraph_vss_1(target_node),
+	      IGRAPH_OUT, IGRAPH_LOOPS));
+      IGRAPH_CHECK(igraph_degree(graph2, &outdeg2, igraph_vss_1(pattern_node),
+	      IGRAPH_OUT, IGRAPH_LOOPS));
+      if ((VECTOR(indeg1)[0] < VECTOR(indeg2)[0]) || (VECTOR(outdeg1)[0] < VECTOR(outdeg2)[0])) {
+	end = 1;
+      }
     }
-    for (j = 0; !end && j < i; j++) {
-      other_pattern_node = VECTOR(node_ordering)[j];
-      other_target_node = VECTOR(*map21)[pattern_node];
-      if (igraph_vector_binsearch2(&inneighs2, other_pattern_node)) {
-	// there is an edge pattern_node <- other_pattern_node
-	if (igraph_vector_binsearch2(&inneighs1, other_target_node)) {
-	  // there is an edge target_node <- other_target_node
-	  IGRAPH_CHECK(igraph_get_eid(graph1, &eid1, (igraph_integer_t) other_target_node,
-			  (igraph_integer_t) target_node, 1, 1));
-	  IGRAPH_CHECK(igraph_get_eid(graph2, &eid2, (igraph_integer_t) other_pattern_node,
-			  (igraph_integer_t) pattern_node, 1, 1));
-	  if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
-	      VECTOR(*edge_color2)[(long int)eid2]) {
-	    end = 1;
-	  }
-	} else {
-	  // edge between target nodes is missing
-	  end = 1;
-	}
-      }
-      if (!end && igraph_vector_binsearch2(&outneighs2, other_pattern_node)) {
-	// there is an edge pattern_node -> other_pattern_node
-	if (igraph_vector_binsearch2(&outneighs1, other_target_node)) {
-	  // there is an edge target_node -> other_target_node
-	  IGRAPH_CHECK(igraph_get_eid(graph1, &eid1, (igraph_integer_t) target_node,
-			  (igraph_integer_t) other_target_node, 1, 1));
-	  IGRAPH_CHECK(igraph_get_eid(graph2, &eid2, (igraph_integer_t) pattern_node,
-			  (igraph_integer_t) other_pattern_node, 1, 1));
-	  if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
-	      VECTOR(*edge_color2)[(long int)eid2]) {
-	    end = 1;
-	  }
-	} else {
-	  // edge between target nodes is missing
-	  end = 1;
-	}
-      }
-      if (induced) {
-	if (!end && igraph_vector_binsearch2(&inneighs1, other_target_node)) {
-	  // there is an edge target_node <- other_target_node
-	  if (igraph_vector_binsearch2(&inneighs2, other_pattern_node)) {
-	    // there is an edge pattern_node <- other_pattern_node
-	    IGRAPH_CHECK(igraph_get_eid(graph1, &eid1, (igraph_integer_t) other_target_node,
-			    (igraph_integer_t) target_node, 1, 1));
-	    IGRAPH_CHECK(igraph_get_eid(graph2, &eid2, (igraph_integer_t) other_pattern_node,
-			    (igraph_integer_t) pattern_node, 1, 1));
-	    if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
-		VECTOR(*edge_color2)[(long int)eid2]) {
-	      end = 1;
-	    }
-	  } else {
-	    // edge between pattern nodes is missing
-	    end = 1;
-	  }
-	}
-	if (!end && igraph_vector_binsearch2(&outneighs1, other_target_node)) {
-	  // there is an edge target_node -> other_target_node
-	  if (igraph_vector_binsearch2(&outneighs2, other_pattern_node)) {
-	    // there is an edge pattern_node -> other_pattern_node
-	    IGRAPH_CHECK(igraph_get_eid(graph1, &eid1, (igraph_integer_t) target_node,
-			    (igraph_integer_t) other_target_node, 1, 1));
-	    IGRAPH_CHECK(igraph_get_eid(graph2, &eid2, (igraph_integer_t) pattern_node,
-			    (igraph_integer_t) other_pattern_node, 1, 1));
-	    if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
-		VECTOR(*edge_color2)[(long int)eid2]) {
-	      end = 1;
-	    }
-	  } else {
-	    // edge between target nodes is missing
-	    end = 1;
-	  }
-	}
-      } // if induced
-    } // for j (other fixed nodes)
-    VECTOR(partial_solution_stack)[stack_pos] = target_node;
-    stack_pos++;
-  } // for i (fixed nodes)
+    VECTOR(partial_solution_stack)[0] = target_node;
+  }
 
   // STEP 2: fill the other assignments with DFS
+
   if (!end) {
+    stack_pos = fixed_count;
     while (stack_pos < vcount2 && stack_pos >= fixed_count) {
+      //for (i = 0; i <= stack_pos; i++) {
+      //  printf("%d ", (int)VECTOR(partial_solution_stack)[i]);
+      //}
+      //printf("\n");
+
       success = 1;
       pattern_node = VECTOR(node_ordering)[stack_pos];
       target_node = VECTOR(partial_solution_stack)[stack_pos];
@@ -422,6 +352,9 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     //}
   }
 
+  igraph_stack_destroy(&dfs_stack);
+  igraph_vector_destroy(&visited);
+  igraph_vector_destroy(&neighs);
   igraph_vector_destroy(&node_ordering);
   igraph_vector_destroy(&partial_solution_stack);
   igraph_vector_destroy(&indeg1);
@@ -447,34 +380,33 @@ int igraph_mib_support(const igraph_t *graph1,
 		       igraph_isocompat_t *node_compat_fn,
 		       igraph_isocompat_t *edge_compat_fn,
 		       igraph_integer_t *support) {
-  igraph_vector_t target_counts, map21;
+  igraph_vector_t target_counts, fixed;
   igraph_bool_t iso;
   long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
   long int i, j;
 
   IGRAPH_CHECK(igraph_vector_init(&target_counts, vcount2));
-  IGRAPH_CHECK(igraph_vector_init(&map21, vcount2));
-  igraph_vector_fill(&map21, -1.);
+  IGRAPH_CHECK(igraph_vector_init(&fixed, 2));
   for (i = 0; i < vcount2; i++) {
+    VECTOR(fixed)[0] = i; // force assignment: pattern node i
     for (j = 0; j < vcount1; j++) {
-      VECTOR(map21)[i] = j; // force assignment: pattern node i -> target node j
+      VECTOR(fixed)[1] = j; // force assignment: target node j
       iso = 0;
       if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
-	      edge_color2, 1, &map21, &iso)) {
+	      edge_color2, 1, &fixed, &iso)) {
         igraph_vector_destroy(&target_counts);
-        igraph_vector_destroy(&map21);
+        igraph_vector_destroy(&fixed);
         return 1;
       }
       if (iso) {
 	VECTOR(target_counts)[i] = VECTOR(target_counts)[i] + 1;
       }
     }
-    VECTOR(map21)[i] = -1; // release forced assignment
   }
 
   *support = igraph_vector_min(&target_counts);
   igraph_vector_destroy(&target_counts);
-  igraph_vector_destroy(&map21);
+  igraph_vector_destroy(&fixed);
   return 0;
 }
 
