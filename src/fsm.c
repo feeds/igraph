@@ -36,10 +36,11 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *edge_color2,
 			   igraph_isocompat_t *node_compat_fn,
 			   igraph_isocompat_t *edge_compat_fn,
+			   igraph_bool_t induced,
 			   igraph_integer_t *support) {
   igraph_bool_t iso;
   if (igraph_subisomorphic_vf2(graph1, graph2, vertex_color1, vertex_color2,
-		edge_color1, edge_color2, 1, &iso, NULL, NULL, node_compat_fn,
+		edge_color1, edge_color2, induced, &iso, NULL, NULL, node_compat_fn,
 		edge_compat_fn, NULL)) {
     return 1;
   }
@@ -74,6 +75,7 @@ int igraph_mib_support_slow(const igraph_t *graph1,
 		       const igraph_vector_int_t *edge_color2,
 		       igraph_isocompat_t *node_compat_fn,
 		       igraph_isocompat_t *edge_compat_fn,
+		       igraph_bool_t induced,
 		       igraph_integer_t *support) {
   igraph_vector_t map21, target_counts;
   igraph_matrix_t target_hits;
@@ -83,7 +85,7 @@ int igraph_mib_support_slow(const igraph_t *graph1,
   igraph_matrix_init(&target_hits, vcount2, vcount1);
   igraph_matrix_null(&target_hits);
   if (igraph_subisomorphic_function_vf2(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
-		edge_color2, 1, NULL, &map21, (igraph_isohandler_t *) igraph_i_mib_isohandler,
+		edge_color2, induced, NULL, &map21, (igraph_isohandler_t *) igraph_i_mib_isohandler,
 		node_compat_fn, edge_compat_fn, (void *) &target_hits)) {
     igraph_matrix_destroy(&target_hits);
     igraph_vector_destroy(&map21);
@@ -104,6 +106,7 @@ int igraph_mib_support_slow(const igraph_t *graph1,
 // graph1 is the larger graph, graph2 is the smaller graph
 // Can handle a single fixed assignment (pattern node, target node) passed as a length-2 vector
 // NOTE: Only works for connected pattern graphs!
+//
 // Algorithm:
 //    1) build a DFS ordering of the pattern nodes (intuition: when matching the next node
 //       starting from a partial solution, we only have to consider the neighbors of all
@@ -112,6 +115,25 @@ int igraph_mib_support_slow(const igraph_t *graph1,
 //       of already matched target nodes as candidates, while maintaining the subgraph isomorphism
 //       properties for every partial solution (matching node labels, matching degrees, matching
 //       edges, in that order)
+//
+// Book-keeping for the search state is rather complex, because we have to keep track of all
+// neighborhoods of all target nodes present in the matching. To facilitate back-tracking, we
+// use three vectors of size vcount2.
+// A partial solution of size k has at each position i <= k:
+//    state_target_idx[i]    index of the target node matched with the pattern node at position
+//                           i of the DFS node ordering. For i = 0, the target index corresponds to
+//                           the target vertex id. For i > 0 the target index specifies an index
+//                           in the neighborhood vector of a parent node of i.
+//    state_nbrhood_idx[i]   specifies the parent neighborhood vector to use, with
+//                           1 <= state_nbrhood_idx[i] <= i. Unused for i = 0.
+//    state_nbrhood_ptr[i]   pointer to the neighborhood vector of the previously matched
+//                           target node (position i-1). Unused for i = 0.
+// The target node for pattern node i = 0 according to the DFS ordering can thus be retrieved
+// by state_target_idx[0], for i > 0 it is given by
+//    state_nbrhood_ptr[state_nbrhood_idx[i]][state_target_idx[i]].
+//
+// TODO: perform a check for duplicate candidates. If a candidate target node appears in two
+//       different parent's neighborhoods (very likely!) we shouldn't consider it twice.
 int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 			   const igraph_vector_int_t *vertex_color1,
 			   const igraph_vector_int_t *vertex_color2,
@@ -452,7 +474,8 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 }
 
 
-/* graph1 is the larger graph, graph2 is the smaller graph */
+// graph1 is the larger graph, graph2 is the smaller graph.
+// node_compat_fn and edge_compat_fn are unused.
 int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_t *graph2,
 		       const igraph_vector_int_t *vertex_color1,
@@ -461,6 +484,7 @@ int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_vector_int_t *edge_color2,
 		       igraph_isocompat_t *node_compat_fn,
 		       igraph_isocompat_t *edge_compat_fn,
+		       igraph_bool_t induced,
 		       igraph_integer_t *support) {
   igraph_vector_t target_counts, fixed;
   igraph_bool_t iso;
@@ -475,7 +499,7 @@ int igraph_mib_support(const igraph_t *graph1,
       VECTOR(fixed)[1] = j; // force assignment: target node j
       iso = 0;
       if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
-	      edge_color2, 1, &fixed, &iso)) {
+	      edge_color2, induced, &fixed, &iso)) {
         igraph_vector_destroy(&target_counts);
         igraph_vector_destroy(&fixed);
         return 1;

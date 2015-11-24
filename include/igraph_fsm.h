@@ -56,6 +56,7 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *edge_color2,
 			   igraph_isocompat_t *node_compat_fn,
 			   igraph_isocompat_t *edge_compat_fn,
+			   igraph_bool_t induced,
 			   igraph_integer_t *support);
 
 int igraph_mib_support(const igraph_t *graph1,
@@ -66,6 +67,7 @@ int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_vector_int_t *edge_color2,
 		       igraph_isocompat_t *node_compat_fn,
 		       igraph_isocompat_t *edge_compat_fn,
+		       igraph_bool_t induced,
 		       igraph_integer_t *support);
 
 int igraph_mib_support_slow(const igraph_t *graph1,
@@ -76,6 +78,7 @@ int igraph_mib_support_slow(const igraph_t *graph1,
 		       const igraph_vector_int_t *edge_color2,
 		       igraph_isocompat_t *node_compat_fn,
 		       igraph_isocompat_t *edge_compat_fn,
+		       igraph_bool_t induced,
 		       igraph_integer_t *support);
 
 int igraph_acgm(const igraph_vector_ptr_t *graphdb, igraph_support_measure_t *supp_fn,
