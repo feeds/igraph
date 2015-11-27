@@ -26,6 +26,7 @@
 #include "igraph_stack.h"
 #include "igraph_interface.h"
 #include "igraph_memory.h"
+#include "igraph_components.h"
 
 /* graph1 is the larger graph, graph2 is the smaller graph */
 int igraph_shallow_support(const igraph_t *graph1,
@@ -156,8 +157,16 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   igraph_vector_ptr_t state_nbrhood_ptr;
   igraph_stack_t dfs_stack;
   igraph_integer_t eid1, eid2;
+  igraph_bool_t conn;
 
   *iso = 0;
+
+  // TODO: currently works only for connected patterns
+  IGRAPH_CHECK(igraph_is_connected(graph2, &conn, IGRAPH_WEAK));
+  if (!conn) {
+    *iso = 0;
+    return 0;
+  }
 
   // create a static ordering of the pattern nodes by DFS
   // if a fixed assignment is given, use this node as root, otherwise take the one with index 0
@@ -397,8 +406,9 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	partial_solution_pos++;
 	VECTOR(state_target_idx)[partial_solution_pos] = 0;
 	VECTOR(state_nbrhood_idx)[partial_solution_pos] = partial_solution_pos;
-	igraph_neighbors(graph1, (igraph_vector_t *)VECTOR(state_nbrhood_ptr)[partial_solution_pos],
-			  (igraph_integer_t) target_node, IGRAPH_ALL);
+	IGRAPH_CHECK(igraph_neighbors(graph1,
+			  (igraph_vector_t *) VECTOR(state_nbrhood_ptr)[partial_solution_pos],
+			  (igraph_integer_t) target_node, IGRAPH_ALL));
       } else {
 	// partial solution has failed
 
