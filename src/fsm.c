@@ -113,7 +113,7 @@ int igraph_mib_support_slow(const igraph_t *graph1,
 //       starting from a partial solution, we only have to consider the neighbors of all
 //       previously matched target nodes
 //    2) match all pattern nodes in the order specified by the DFS ordering, using the neighbors
-//       of already matched target nodes as candidates, while maintaining the subgraph isomorphism
+//       of their DFS parents as candidates, while maintaining the subgraph isomorphism
 //       properties for every partial solution (matching node labels, matching degrees, matching
 //       edges, in that order)
 //
@@ -124,14 +124,13 @@ int igraph_mib_support_slow(const igraph_t *graph1,
 //    state_target_idx[i]    index of the target node matched with the pattern node at position
 //                           i of the DFS node ordering. For i = 0, the target index corresponds to
 //                           the target vertex id. For i > 0 the target index specifies an index
-//                           in the neighborhood vector of a parent node of i.
-//    state_nbrhood_idx[i]   specifies the parent neighborhood vector to use, with
-//                           1 <= state_nbrhood_idx[i] <= i. Unused for i = 0.
-//    state_nbrhood_ptr[i]   pointer to the neighborhood vector of the previously matched
-//                           target node (position i-1). Unused for i = 0.
+//                           in the neighborhood vector of the DFS parent node of i.
+//    state_nbrhood_ptr[i]   pointer to the neighborhood vector of the matched target node.
+//    pred_idx[i]            specifies the parent neighborhood vector to use, fixed while
+//                           generating the node ordering
 // The target node for pattern node i = 0 according to the DFS ordering can thus be retrieved
 // by state_target_idx[0], for i > 0 it is given by
-//    state_nbrhood_ptr[state_nbrhood_idx[i]][state_target_idx[i]].
+//    state_nbrhood_ptr[pred_idx[i]][state_target_idx[i]].
 //
 int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 			   const igraph_vector_int_t *vertex_color1,
