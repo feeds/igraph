@@ -249,7 +249,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     // initialize first free assignment
     partial_solution_pos = fixed_count;
     VECTOR(state_target_idx)[partial_solution_pos] = 0;
-    VECTOR(state_nbrhood_idx)[partial_solution_pos] = 1;
+    VECTOR(state_nbrhood_idx)[partial_solution_pos] = partial_solution_pos;
     while (1) {
       success = 1;
       pattern_node = VECTOR(node_ordering)[partial_solution_pos];
@@ -396,7 +396,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	// match the next pattern node according to the node ordering
 	partial_solution_pos++;
 	VECTOR(state_target_idx)[partial_solution_pos] = 0;
-	VECTOR(state_nbrhood_idx)[partial_solution_pos] = 1;
+	VECTOR(state_nbrhood_idx)[partial_solution_pos] = partial_solution_pos;
 	igraph_neighbors(graph1, (igraph_vector_t *)VECTOR(state_nbrhood_ptr)[partial_solution_pos],
 			  (igraph_integer_t) target_node, IGRAPH_ALL);
       } else {
@@ -406,7 +406,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 		&& (VECTOR(state_target_idx)[partial_solution_pos]
 		    == igraph_vector_size((igraph_vector_t *)VECTOR(state_nbrhood_ptr)[
 					(int)VECTOR(state_nbrhood_idx)[partial_solution_pos]])-1)
-		&& (VECTOR(state_nbrhood_idx)[partial_solution_pos] == partial_solution_pos)) {
+		&& (VECTOR(state_nbrhood_idx)[partial_solution_pos] == 1)) {
 	  // all nodes from all neighborhoods have been tried, perform backtracking
 	  partial_solution_pos--;
 	}
@@ -430,7 +430,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	        == igraph_vector_size((igraph_vector_t *)VECTOR(state_nbrhood_ptr)[
 	      			  (int)VECTOR(state_nbrhood_idx)[partial_solution_pos]])-1) {
 	    // all nodes from current neighborhood have been tried, proceed to next neighborhood
-	    VECTOR(state_nbrhood_idx)[partial_solution_pos] += 1;
+	    VECTOR(state_nbrhood_idx)[partial_solution_pos] -= 1;
 	    VECTOR(state_target_idx)[partial_solution_pos] = 0;
 	  } else {
 	    // there are node candidates left in the current neighborhood, proceed to next node
