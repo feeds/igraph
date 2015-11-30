@@ -9,16 +9,13 @@ int match_rings_induced() {
   igraph_ring(&rc, 10, /*directed=*/ 0, /*mutual=*/ 0, /*circular=*/ 1);
 
 
-  igraph_vector_t deg;
-  int i, j;
-  igraph_vector_init(&deg, 0);
+  long int i, j;
   for (i = 0; i < 10; i++) {
-    igraph_degree(&ro, &deg, igraph_vss_1(i), IGRAPH_ALL, IGRAPH_LOOPS);
-    for (j = 0; j < VECTOR(deg)[0]; j++) {
-      printf("%d -- %ld\n", i, NEIGHBOR(ro, i, j));
+    long int deg = DEGREE(ro, i);
+    for (j = 0; j < deg; j++) {
+      printf("%ld -- %ld\n", i, NEIGHBOR(ro, i, j));
     }
   }
-  igraph_vector_destroy(&deg);
   printf("\n");
 
   printf("INDUCED\n");

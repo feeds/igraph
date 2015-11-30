@@ -147,12 +147,12 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   long int pattern_node, other_pattern_node, target_node, other_target_node;
   int end = 0, success = 1;
   igraph_vector_t indeg1, indeg2, outdeg1, outdeg2;
-  igraph_vector_t inneighs1, inneighs2, outneighs1, outneighs2, neighs;
+  igraph_vector_t inneighs1, inneighs2, outneighs1, outneighs2;
   igraph_vector_t node_ordering;
   igraph_vector_t pred_idx;
   igraph_vector_t visited;
   igraph_vector_t state_target_idx;
-  igraph_vector_ptr_t state_nbrhood_ptr;
+  igraph_vector_t state_target_node;
   igraph_stack_t dfs_node_stack;
   igraph_stack_t dfs_pred_stack;
   igraph_integer_t eid1, eid2;
@@ -174,7 +174,6 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   IGRAPH_CHECK(igraph_vector_init(&node_ordering, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&pred_idx, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&visited, vcount2));
-  IGRAPH_CHECK(igraph_vector_init(&neighs, 0));
   if (fixed == NULL) {
     IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, 0));
     fixed_count = 0;
@@ -193,9 +192,8 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       VECTOR(pred_idx)[i] = pred;
 
       // add neighbors to stack
-      IGRAPH_CHECK(igraph_neighbors(graph2, &neighs, (igraph_integer_t)pattern_node, IGRAPH_ALL));
-      for (j = 0; j < igraph_vector_size(&neighs); j++) {
-	IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, VECTOR(neighs)[j]));
+      for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
+	IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
 	IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
       }
 
@@ -206,11 +204,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
   // initialize the state representation
   IGRAPH_CHECK(igraph_vector_init(&state_target_idx, vcount2));
-  IGRAPH_CHECK(igraph_vector_ptr_init(&state_nbrhood_ptr, vcount2));
-  for (i = 0; i < vcount2; i++) {
-    VECTOR(state_nbrhood_ptr)[i] = igraph_Calloc(1, igraph_vector_t);
-    IGRAPH_CHECK(igraph_vector_init((igraph_vector_t *) VECTOR(state_nbrhood_ptr)[i], 0));
-  }
+  IGRAPH_CHECK(igraph_vector_init(&state_target_node, vcount2));
 
   IGRAPH_CHECK(igraph_vector_init(&indeg1, 0));
   IGRAPH_CHECK(igraph_vector_init(&indeg2, 0));
@@ -252,8 +246,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     // initialize first node with fixed assignment
     if (!end) {
       VECTOR(state_target_idx)[0] = target_node;
-      IGRAPH_CHECK(igraph_neighbors(graph1, (igraph_vector_t *)VECTOR(state_nbrhood_ptr)[0],
-		        (igraph_integer_t) target_node, IGRAPH_ALL));
+      VECTOR(state_target_node)[0] = target_node;
     }
   }
 
@@ -268,13 +261,14 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       pattern_node = VECTOR(node_ordering)[partial_solution_pos];
       if (partial_solution_pos == 0) {
 	// target index is actual target node
-	target_node = VECTOR(state_target_idx)[partial_solution_pos];
+	VECTOR(state_target_node)[partial_solution_pos] = VECTOR(state_target_idx)[partial_solution_pos];
       } else {
 	// target index is index in parent's neighborhood
-	igraph_vector_t *nbrhood = (igraph_vector_t *)VECTOR(state_nbrhood_ptr)[
-				  (int)VECTOR(pred_idx)[partial_solution_pos]];
-	target_node = VECTOR(*nbrhood)[(int)VECTOR(state_target_idx)[partial_solution_pos]];
+	VECTOR(state_target_node)[partial_solution_pos] = NEIGHBOR(*graph1,
+	    (long int) VECTOR(state_target_node)[(long int) VECTOR(pred_idx)[partial_solution_pos]],
+	    (long int) VECTOR(state_target_idx)[partial_solution_pos]);
       }
+      target_node = VECTOR(state_target_node)[partial_solution_pos];
 
       // check colors
       if (vertex_color1 && (VECTOR(*vertex_color1)[target_node]
@@ -287,9 +281,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	success = 0;
       }
       for (i = 1; success && i < partial_solution_pos; i++) {
-	other_target_node = VECTOR(*(igraph_vector_t *)VECTOR(state_nbrhood_ptr)[
-				    (int)VECTOR(pred_idx)[i]]
-			    )[(int)VECTOR(state_target_idx)[i]];
+	other_target_node = (long int) VECTOR(state_target_node)[i];
 	if (other_target_node == target_node) {
 	  success = 0;
 	}
@@ -318,15 +310,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       IGRAPH_CHECK(igraph_neighbors(graph2, &outneighs2, (igraph_integer_t) pattern_node, IGRAPH_OUT));
       for (i = 0; success && i < partial_solution_pos; i++) {
 	other_pattern_node = VECTOR(node_ordering)[i];
-	if (i == 0) {
-	  // target index is actual target node
-	  other_target_node = VECTOR(state_target_idx)[i];
-	} else {
-	  // target index is index in some parent's neighborhood
-	  other_target_node = VECTOR(*(igraph_vector_t *)VECTOR(state_nbrhood_ptr)[
-				    (int)VECTOR(pred_idx)[i]]
-			    )[(int)VECTOR(state_target_idx)[i]];
-	}
+	other_target_node = VECTOR(state_target_node)[i];
 	if (igraph_vector_binsearch2(&inneighs2, other_pattern_node)) {
 	  // there is an edge pattern_node <- other_pattern_node
 	  if (igraph_vector_binsearch2(&inneighs1, other_target_node)) {
@@ -405,10 +389,6 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	  // partial solution is a full solution, successful finish
 	  break;
 	}
-	// retrieve neighbors as target candidates for the next pattern node
-	IGRAPH_CHECK(igraph_neighbors(graph1,
-			  (igraph_vector_t *) VECTOR(state_nbrhood_ptr)[partial_solution_pos],
-			  (igraph_integer_t) target_node, IGRAPH_ALL));
 	// initialize next position
 	partial_solution_pos++;
 	VECTOR(state_target_idx)[partial_solution_pos] = 0;
@@ -417,8 +397,8 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
 	while ((partial_solution_pos > 0)
 		&& (VECTOR(state_target_idx)[partial_solution_pos]
-		    == igraph_vector_size((igraph_vector_t *)VECTOR(state_nbrhood_ptr)[
-					(int)VECTOR(pred_idx)[partial_solution_pos]])-1)) {
+		    == DEGREE(*graph1, (long int) VECTOR(state_target_node)[(long int)
+				VECTOR(pred_idx)[partial_solution_pos]])-1)) {
 	  // all nodes from parent's neighborhood have been tried, perform backtracking
 	  partial_solution_pos--;
 	}
@@ -447,25 +427,15 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
   if (!end && success) {
     *iso = 1;
-    //if (map21 != NULL) {
-    //  for (i = 0; i < vcount2; i++) {
-    //    VECTOR(*map21)[(long int) VECTOR(node_ordering)[i]] = VECTOR(partial_solution_stack)[i];
-    //  }
-    //}
   }
 
   igraph_stack_destroy(&dfs_node_stack);
   igraph_stack_destroy(&dfs_pred_stack);
   igraph_vector_destroy(&visited);
-  igraph_vector_destroy(&neighs);
   igraph_vector_destroy(&node_ordering);
   igraph_vector_destroy(&pred_idx);
   igraph_vector_destroy(&state_target_idx);
-  for (i = 0; i < vcount2; i++) {
-    igraph_vector_destroy((igraph_vector_t *) VECTOR(state_nbrhood_ptr)[i]);
-    igraph_free(VECTOR(state_nbrhood_ptr)[i]);
-  }
-  igraph_vector_ptr_destroy(&state_nbrhood_ptr);
+  igraph_vector_destroy(&state_target_node);
   igraph_vector_destroy(&indeg1);
   igraph_vector_destroy(&indeg2);
   igraph_vector_destroy(&outdeg1);
