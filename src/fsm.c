@@ -396,26 +396,61 @@ int igraph_mib_support(const igraph_t *graph1,
   igraph_vector_t target_counts, fixed;
   igraph_bool_t iso;
   long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
-  long int i, j;
+  long int i, j, automorphic_node;
 
-  // TODO: consider automorphisms of the pattern graph. If i and j are isomorphic,
-  // and we found all matchings for i, we can reuse them for j.
-
-  IGRAPH_CHECK(igraph_vector_init(&target_counts, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&fixed, 2));
+
+  // find all automorphic pattern nodes
+  igraph_matrix_t automorphic_nodes;
+  IGRAPH_CHECK(igraph_matrix_init(&automorphic_nodes, vcount2, vcount2));
   for (i = 0; i < vcount2; i++) {
     VECTOR(fixed)[0] = i; // force assignment: pattern node i
-    for (j = 0; j < vcount1; j++) {
-      VECTOR(fixed)[1] = j; // force assignment: target node j
+    for (j = 0; j < i; j++) {
+      VECTOR(fixed)[1] = j; // force assignment: pattern node j
       iso = 0;
-      if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
+      if (igraph_i_subisomorphic(graph2, graph2, vertex_color2, vertex_color2, edge_color2,
 	      edge_color2, induced, &fixed, &iso)) {
-        igraph_vector_destroy(&target_counts);
-        igraph_vector_destroy(&fixed);
-        return 1;
+	igraph_vector_destroy(&fixed);
+	igraph_matrix_destroy(&automorphic_nodes);
+	return 1;
       }
       if (iso) {
-	VECTOR(target_counts)[i] = VECTOR(target_counts)[i] + 1;
+	MATRIX(automorphic_nodes, i, j) = 1;
+      }
+    }
+  }
+
+  // test all possible pairs (pattern node i, target node j) for isomorphism
+  IGRAPH_CHECK(igraph_vector_init(&target_counts, vcount2));
+  for (i = 0; i < vcount2; i++) {
+    VECTOR(fixed)[0] = i; // force assignment: pattern node i
+
+    // check if this node is isomorphic to a previously checked node
+    automorphic_node = -1;
+    for (j = 0; j < i; j++) {
+      if (MATRIX(automorphic_nodes, i, j) == 1) {
+	automorphic_node = j;
+	break;
+      }
+    }
+
+    if (automorphic_node >= 0) {
+      // we found an automorphic node, reuse its result
+      VECTOR(target_counts)[i] = VECTOR(target_counts)[j];
+    } else {
+      // no automorphic node found, test all possible target assignments
+      for (j = 0; j < vcount1; j++) {
+	VECTOR(fixed)[1] = j; // force assignment: target node j
+	iso = 0;
+	if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
+		edge_color2, induced, &fixed, &iso)) {
+	  igraph_vector_destroy(&target_counts);
+	  igraph_vector_destroy(&fixed);
+	  return 1;
+	}
+	if (iso) {
+	  VECTOR(target_counts)[i] = VECTOR(target_counts)[i] + 1;
+	}
       }
     }
   }
@@ -424,6 +459,7 @@ int igraph_mib_support(const igraph_t *graph1,
   *support = igraph_vector_min(&target_counts);
   igraph_vector_destroy(&target_counts);
   igraph_vector_destroy(&fixed);
+  igraph_matrix_destroy(&automorphic_nodes);
   return 0;
 }
 
