@@ -28,7 +28,8 @@
 #include "igraph_memory.h"
 #include "igraph_components.h"
 
-/* graph1 is the larger graph, graph2 is the smaller graph */
+
+// graph1 is the larger graph, graph2 is the smaller graph
 int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_t *graph2,
 			   const igraph_vector_int_t *vertex_color1,
@@ -494,6 +495,9 @@ int igraph_mib_support(const igraph_t *graph1,
   igraph_bool_t iso;
   long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
   long int i, j;
+
+  // TODO: consider automorphisms of the pattern graph. If i and j are isomorphic,
+  // and we found all matchings for i, we can reuse them for j.
 
   IGRAPH_CHECK(igraph_vector_init(&target_counts, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&fixed, 2));

@@ -40,6 +40,17 @@
 
 __BEGIN_DECLS
 
+// O(1) access to in- and out-neighbors
+#ifndef OUT_NEIGHBOR
+# define OUT_NEIGHBOR(g, v, i) ((long int) VECTOR((g).to)[(long int) VECTOR((g).oi)[(long int) VECTOR((g).os)[(v)] + i]])
+#endif
+#ifndef IN_NEIGHBOR
+# define IN_NEIGHBOR(g, v, i) ((long int) VECTOR((g).from)[(long int) VECTOR((g).ii)[(long int) VECTOR((g).is)[(v)] + i]])
+#endif
+#ifndef NEIGHBOR
+# define NEIGHBOR(g, v, i) (((i) < VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]) ? OUT_NEIGHBOR((g),(v),(i)) : IN_NEIGHBOR((g),(v),((i)-(long int)(VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]))))
+#endif
+
 /* -------------------------------------------------- */
 /* Frequent subgraph mining                           */
 /* -------------------------------------------------- */
