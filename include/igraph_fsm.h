@@ -40,7 +40,7 @@
 
 __BEGIN_DECLS
 
-// O(1) access to in- and out-neighbors
+// O(1) access to in- and out-neighbors and degrees
 
 #ifndef OUT_NEIGHBOR
 # define OUT_NEIGHBOR(g, v, i) ((long int) VECTOR((g).to)[(long int) VECTOR((g).oi)[(long int) VECTOR((g).os)[(v)] + i]])
@@ -54,8 +54,24 @@ __BEGIN_DECLS
 # define NEIGHBOR(g, v, i) (((i) < VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]) ? OUT_NEIGHBOR((g),(v),(i)) : IN_NEIGHBOR((g),(v),((i)-(long int)(VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]))))
 #endif
 
+#ifndef IN_DEGREE
+# define IN_DEGREE(g, v) ((long int) VECTOR((g).is)[(v)+1]-VECTOR((g).is)[(v)])
+#endif
+
+#ifndef OUT_DEGREE
+# define OUT_DEGREE(g, v) ((long int) VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)])
+#endif
+
 #ifndef DEGREE
-# define DEGREE(g, v) ((long int)(VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)] + VECTOR((g).is)[(v)+1]-VECTOR((g).is)[(v)]))
+# define DEGREE(g, v) (IN_DEGREE((g), (v)) + OUT_DEGREE((g), (v)))
+#endif
+
+#ifndef IN_NEIGH_TO_EID
+# define IN_NEIGH_TO_EID(g, v, i) ((long int) VECTOR((g).ii)[(long int) VECTOR((g).is)[(v)] + i])
+#endif
+
+#ifndef OUT_NEIGH_TO_EID
+# define OUT_NEIGH_TO_EID(g, v, i) ((long int) VECTOR((g).oi)[(long int) VECTOR((g).os)[(v)] + i])
 #endif
 
 
