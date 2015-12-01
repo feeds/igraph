@@ -1,6 +1,6 @@
 /* vim:set ts=8 sw=2 sts=2 noet:  */
 /* 
-   IGraph library AcGM implementation.
+   IGraph library: frequent subgraph mining algorithms
    Copyright (C) 2015  Erik Scharwaechter <erik.scharwaechter@rwth-aachen.de>
 
    This program is free software; you can redistribute it and/or modify
@@ -15,7 +15,7 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc.,  51 Franklin Street, Fifth Floor, Boston, MA 
+   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 
    02110-1301 USA
 
 */
@@ -39,6 +39,12 @@
 #include "igraph_topology.h"
 
 __BEGIN_DECLS
+
+
+// maximum node/edge color that can appear in the graph database, needed to allocate enough memory
+// TODO: should be removed in the future
+#define MAX_COLOR 25
+
 
 // O(1) access to in- and out-neighbors and degrees
 
@@ -79,15 +85,7 @@ __BEGIN_DECLS
 /* Frequent subgraph mining                           */
 /* -------------------------------------------------- */
 
-typedef int igraph_support_measure_t(const igraph_t *graph1,
-				     const igraph_t *graph2,
-				     const igraph_vector_int_t *vertex_color1,
-				     const igraph_vector_int_t *vertex_color2,
-				     const igraph_vector_int_t *edge_color1,
-				     const igraph_vector_int_t *edge_color2,
-				     igraph_bool_t induced,
-				     igraph_integer_t *support,
-				     igraph_integer_t min_supp);
+// Single graph support measures
 
 int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_t *graph2,
@@ -119,11 +117,44 @@ int igraph_mib_support_slow(const igraph_t *graph1,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp);
 
-int igraph_acgm(const igraph_vector_ptr_t *graphdb, igraph_support_measure_t *supp_fn,
+// Graph database support measures
+
+typedef int igraph_db_support_measure_t(const igraph_vector_ptr_t *graphs,
+					const igraph_vector_ptr_t *vertex_colors,
+					const igraph_vector_ptr_t *edge_colors,
+					const igraph_t *pattern,
+					const igraph_vector_int_t *pattern_vcolors,
+					const igraph_vector_int_t *pattern_ecolors,
+					igraph_bool_t induced,
+					igraph_integer_t *support);
+
+int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
+			  const igraph_vector_ptr_t *vertex_colors,
+			  const igraph_vector_ptr_t *edge_colors,
+			  const igraph_t *pattern,
+			  const igraph_vector_int_t *pattern_vcolors,
+			  const igraph_vector_int_t *pattern_ecolors,
+			  igraph_bool_t induced,
+			  igraph_integer_t *support);
+
+int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
+			      const igraph_vector_ptr_t *vertex_colors,
+			      const igraph_vector_ptr_t *edge_colors,
+			      const igraph_t *pattern,
+			      const igraph_vector_int_t *pattern_vcolors,
+			      const igraph_vector_int_t *pattern_ecolors,
+			      igraph_bool_t induced,
+			      igraph_integer_t *support);
+
+// Mining algorithms
+
+int igraph_acgm(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
+		const igraph_vector_ptr_t *edge_colors, igraph_db_support_measure_t *supp_measure,
 		igraph_integer_t min_supp, igraph_vector_ptr_t *frequent_subgraphs,
 		igraph_vector_t *support_values);
 
-int igraph_gspan(const igraph_vector_ptr_t *graphdb, igraph_support_measure_t *supp_fn,
+int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
+		const igraph_vector_ptr_t *edge_colors, igraph_db_support_measure_t *supp_measure,
 		igraph_integer_t min_supp, igraph_vector_ptr_t *frequent_subgraphs,
 		igraph_vector_t *support_values);
 
