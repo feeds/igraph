@@ -1,6 +1,6 @@
 /* vim:set ts=8 sw=2 sts=2 noet:  */
 /* 
-   IGraph library AcGM implementation.
+   IGraph library frequent subgraph mining algorithms.
    Copyright (C) 2015  Erik Scharwaechter <erik.scharwaechter@rwth-aachen.de>
 
    This program is free software; you can redistribute it and/or modify
@@ -29,32 +29,6 @@
 #include "igraph_components.h"
 
 
-// graph1 is the larger graph, graph2 is the smaller graph
-int igraph_shallow_support(const igraph_t *graph1,
-			   const igraph_t *graph2,
-			   const igraph_vector_int_t *vertex_color1,
-			   const igraph_vector_int_t *vertex_color2,
-			   const igraph_vector_int_t *edge_color1,
-			   const igraph_vector_int_t *edge_color2,
-			   igraph_isocompat_t *node_compat_fn,
-			   igraph_isocompat_t *edge_compat_fn,
-			   igraph_bool_t induced,
-			   igraph_integer_t *support) {
-  igraph_bool_t iso;
-  if (igraph_subisomorphic_vf2(graph1, graph2, vertex_color1, vertex_color2,
-		edge_color1, edge_color2, induced, &iso, NULL, NULL, node_compat_fn,
-		edge_compat_fn, NULL)) {
-    return 1;
-  }
-  if (iso) {
-    *support = 1;
-  } else {
-    *support = 0;
-  }
-  return 0;
-}
-
-
 igraph_bool_t igraph_i_mib_isohandler(const igraph_vector_t *map12,
 				      const igraph_vector_t *map21, void *arg) {
   igraph_matrix_t *target_hits = (igraph_matrix_t *) arg;
@@ -75,10 +49,9 @@ int igraph_mib_support_slow(const igraph_t *graph1,
 		       const igraph_vector_int_t *vertex_color2,
 		       const igraph_vector_int_t *edge_color1,
 		       const igraph_vector_int_t *edge_color2,
-		       igraph_isocompat_t *node_compat_fn,
-		       igraph_isocompat_t *edge_compat_fn,
 		       igraph_bool_t induced,
-		       igraph_integer_t *support) {
+		       igraph_integer_t *support,
+		       igraph_integer_t min_supp) {
   igraph_vector_t map21, target_counts;
   igraph_matrix_t target_hits;
   long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
@@ -88,7 +61,7 @@ int igraph_mib_support_slow(const igraph_t *graph1,
   igraph_matrix_null(&target_hits);
   if (igraph_subisomorphic_function_vf2(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
 		edge_color2, induced, NULL, &map21, (igraph_isohandler_t *) igraph_i_mib_isohandler,
-		node_compat_fn, edge_compat_fn, (void *) &target_hits)) {
+		NULL, NULL, (void *) &target_hits)) {
     igraph_matrix_destroy(&target_hits);
     igraph_vector_destroy(&map21);
     return 1;
@@ -382,15 +355,12 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
 
 // graph1 is the larger graph, graph2 is the smaller graph.
-// node_compat_fn and edge_compat_fn are unused.
 int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_t *graph2,
 		       const igraph_vector_int_t *vertex_color1,
 		       const igraph_vector_int_t *vertex_color2,
 		       const igraph_vector_int_t *edge_color1,
 		       const igraph_vector_int_t *edge_color2,
-		       igraph_isocompat_t *node_compat_fn,
-		       igraph_isocompat_t *edge_compat_fn,
 		       igraph_bool_t induced,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp) {
@@ -474,9 +444,39 @@ int igraph_mib_support(const igraph_t *graph1,
   return 0;
 }
 
+// graph1 is the larger graph, graph2 is the smaller graph
+int igraph_shallow_support(const igraph_t *graph1,
+			   const igraph_t *graph2,
+			   const igraph_vector_int_t *vertex_color1,
+			   const igraph_vector_int_t *vertex_color2,
+			   const igraph_vector_int_t *edge_color1,
+			   const igraph_vector_int_t *edge_color2,
+			   igraph_bool_t induced,
+			   igraph_integer_t *support,
+			   igraph_integer_t min_supp) {
+  igraph_bool_t iso;
+  if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
+		edge_color1, edge_color2, induced, NULL, &iso)) {
+    return 1;
+  }
+  if (iso) {
+    *support = 1;
+  } else {
+    *support = 0;
+  }
+  return 0;
+}
+
+
 int igraph_acgm(const igraph_vector_ptr_t *graphdb, igraph_support_measure_t *supp_fn,
-		igraph_real_t min_supp, igraph_vector_ptr_t *frequent_subgraphs,
+		igraph_integer_t min_supp, igraph_vector_ptr_t *frequent_subgraphs,
 		igraph_vector_t *support_values) {
   return 0;
 }
 
+
+int igraph_gspan(const igraph_vector_ptr_t *graphdb, igraph_support_measure_t *supp_fn,
+		igraph_integer_t min_supp, igraph_vector_ptr_t *frequent_subgraphs,
+		igraph_vector_t *support_values) {
+  return 0;
+}
