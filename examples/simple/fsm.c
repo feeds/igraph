@@ -29,13 +29,13 @@ int match_rings_induced() {
   igraph_shallow_support(&rc, &ro, 0, 0, 0, 0, 0, 0, 1, &supp);
   printf("sh rc-ro %d\n\n", supp);
 
-  igraph_mib_support(&ro, &ro, 0, 0, 0, 0, 0, 0, 1, &supp);
+  igraph_mib_support(&ro, &ro, 0, 0, 0, 0, 0, 0, 1, &supp, -1);
   printf("mib ro-ro %d\n", supp);
 
-  igraph_mib_support(&rc, &rc, 0, 0, 0, 0, 0, 0, 1, &supp);
+  igraph_mib_support(&rc, &rc, 0, 0, 0, 0, 0, 0, 1, &supp, -1);
   printf("mib rc-rc %d\n", supp);
 
-  igraph_mib_support(&rc, &ro, 0, 0, 0, 0, 0, 0, 1, &supp);
+  igraph_mib_support(&rc, &ro, 0, 0, 0, 0, 0, 0, 1, &supp, -1);
   printf("mib rc-ro %d\n\n", supp);
 
   igraph_mib_support_slow(&ro, &ro, 0, 0, 0, 0, 0, 0, 1, &supp);
@@ -70,13 +70,13 @@ int match_rings_noninduced() {
   igraph_shallow_support(&rc, &ro, 0, 0, 0, 0, 0, 0, 0, &supp);
   printf("sh rc-ro %d\n\n", supp);
 
-  igraph_mib_support(&ro, &ro, 0, 0, 0, 0, 0, 0, 0, &supp);
+  igraph_mib_support(&ro, &ro, 0, 0, 0, 0, 0, 0, 0, &supp, -1);
   printf("mib ro-ro %d\n", supp);
 
-  igraph_mib_support(&rc, &rc, 0, 0, 0, 0, 0, 0, 0, &supp);
+  igraph_mib_support(&rc, &rc, 0, 0, 0, 0, 0, 0, 0, &supp, -1);
   printf("mib rc-rc %d\n", supp);
 
-  igraph_mib_support(&rc, &ro, 0, 0, 0, 0, 0, 0, 0, &supp);
+  igraph_mib_support(&rc, &ro, 0, 0, 0, 0, 0, 0, 0, &supp, -1);
   printf("mib rc-ro %d\n\n", supp);
 
   igraph_mib_support_slow(&ro, &ro, 0, 0, 0, 0, 0, 0, 0, &supp);

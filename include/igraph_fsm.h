@@ -103,7 +103,8 @@ int igraph_mib_support(const igraph_t *graph1,
 		       igraph_isocompat_t *node_compat_fn,
 		       igraph_isocompat_t *edge_compat_fn,
 		       igraph_bool_t induced,
-		       igraph_integer_t *support);
+		       igraph_integer_t *support,
+		       igraph_integer_t min_supp);
 
 int igraph_mib_support_slow(const igraph_t *graph1,
 		       const igraph_t *graph2,

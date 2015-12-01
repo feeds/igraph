@@ -392,7 +392,8 @@ int igraph_mib_support(const igraph_t *graph1,
 		       igraph_isocompat_t *node_compat_fn,
 		       igraph_isocompat_t *edge_compat_fn,
 		       igraph_bool_t induced,
-		       igraph_integer_t *support) {
+		       igraph_integer_t *support,
+		       igraph_integer_t min_supp) {
   igraph_vector_t target_counts, fixed;
   igraph_bool_t iso;
   long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
@@ -451,6 +452,16 @@ int igraph_mib_support(const igraph_t *graph1,
 	if (iso) {
 	  VECTOR(target_counts)[i] = VECTOR(target_counts)[i] + 1;
 	}
+      }
+
+      // early termination: the support can only be smaller than or equal to VECTOR(target_counts)[i].
+      // if that value is already smaller than min_supp, we don't need to continue.
+      if (min_supp >= 0 && VECTOR(target_counts)[i] < min_supp) {
+	*support = 0;
+	igraph_vector_destroy(&target_counts);
+	igraph_vector_destroy(&fixed);
+	igraph_matrix_destroy(&automorphic_nodes);
+	return 0;
       }
     }
   }
