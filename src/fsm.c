@@ -21,6 +21,7 @@
 */
 
 #include <stdlib.h>
+#include <string.h> // memcpy
 #include "igraph_fsm.h"
 #include "igraph_matrix.h"
 #include "igraph_stack.h"
@@ -29,6 +30,8 @@
 #include "igraph_components.h"
 #include "igraph_constructors.h"
 
+
+// ------------- HELPER FUNCTIONS -------------
 
 void igraph_i_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
 		    const igraph_vector_int_t *ecolors) {
@@ -78,43 +81,6 @@ igraph_bool_t igraph_i_mib_isohandler(const igraph_vector_t *map12,
 }
 
 
-/* graph1 is the larger graph, graph2 is the smaller graph */
-/* naive implementation: iterates over all embeddings and collects target nodes */
-int igraph_mib_support_slow(const igraph_t *graph1,
-		       const igraph_t *graph2,
-		       const igraph_vector_int_t *vertex_color1,
-		       const igraph_vector_int_t *vertex_color2,
-		       const igraph_vector_int_t *edge_color1,
-		       const igraph_vector_int_t *edge_color2,
-		       igraph_bool_t induced,
-		       igraph_integer_t *support,
-		       igraph_integer_t min_supp) {
-  igraph_vector_t map21, target_counts;
-  igraph_matrix_t target_hits;
-  long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
-
-  igraph_vector_init(&map21, 0);
-  igraph_matrix_init(&target_hits, vcount2, vcount1);
-  igraph_matrix_null(&target_hits);
-  if (igraph_subisomorphic_function_vf2(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
-		edge_color2, induced, NULL, &map21, (igraph_isohandler_t *) igraph_i_mib_isohandler,
-		NULL, NULL, (void *) &target_hits)) {
-    igraph_matrix_destroy(&target_hits);
-    igraph_vector_destroy(&map21);
-    return 1;
-  }
-
-  igraph_vector_init(&target_counts, vcount2);
-  igraph_matrix_rowsum(&target_hits, &target_counts);
-  *support = igraph_vector_min(&target_counts);
-
-  igraph_vector_destroy(&target_counts);
-  igraph_matrix_destroy(&target_hits);
-  igraph_vector_destroy(&map21);
-  return 0;
-}
-
-
 // graph1 is the larger graph, graph2 is the smaller graph
 // Can handle a single fixed assignment (pattern node, target node) passed as a length-2 vector
 // NOTE: Only works for connected pattern graphs!
@@ -161,7 +127,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   IGRAPH_CHECK(igraph_is_connected(graph2, &conn, IGRAPH_WEAK));
   if (!conn) {
     *iso = 0;
-    return 0;
+    return 1;
   }
 
   // create a static ordering of the pattern nodes by DFS
@@ -391,6 +357,46 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 }
 
 
+// ------------- SUPPORT MEASURES -------------
+
+
+/* graph1 is the larger graph, graph2 is the smaller graph */
+/* naive implementation: iterates over all embeddings and collects target nodes */
+int igraph_mib_support_slow(const igraph_t *graph1,
+		       const igraph_t *graph2,
+		       const igraph_vector_int_t *vertex_color1,
+		       const igraph_vector_int_t *vertex_color2,
+		       const igraph_vector_int_t *edge_color1,
+		       const igraph_vector_int_t *edge_color2,
+		       igraph_bool_t induced,
+		       igraph_integer_t *support,
+		       igraph_integer_t min_supp) {
+  igraph_vector_t map21, target_counts;
+  igraph_matrix_t target_hits;
+  long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
+
+  igraph_vector_init(&map21, 0);
+  igraph_matrix_init(&target_hits, vcount2, vcount1);
+  igraph_matrix_null(&target_hits);
+  if (igraph_subisomorphic_function_vf2(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
+		edge_color2, induced, NULL, &map21, (igraph_isohandler_t *) igraph_i_mib_isohandler,
+		NULL, NULL, (void *) &target_hits)) {
+    igraph_matrix_destroy(&target_hits);
+    igraph_vector_destroy(&map21);
+    return 1;
+  }
+
+  igraph_vector_init(&target_counts, vcount2);
+  igraph_matrix_rowsum(&target_hits, &target_counts);
+  *support = igraph_vector_min(&target_counts);
+
+  igraph_vector_destroy(&target_counts);
+  igraph_matrix_destroy(&target_hits);
+  igraph_vector_destroy(&map21);
+  return 0;
+}
+
+
 // graph1 is the larger graph, graph2 is the smaller graph.
 int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_t *graph2,
@@ -481,6 +487,7 @@ int igraph_mib_support(const igraph_t *graph1,
   return 0;
 }
 
+
 // graph1 is the larger graph, graph2 is the smaller graph
 int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_t *graph2,
@@ -493,7 +500,7 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   igraph_integer_t min_supp) {
   igraph_bool_t iso;
   if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
-		edge_color1, edge_color2, induced, NULL, &iso)) {
+		edge_color1, edge_color2, induced, /*fixed=*/ NULL, &iso)) {
     return 1;
   }
   if (iso) {
@@ -565,14 +572,141 @@ int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
 }
 
 
-int igraph_acgm(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
-		const igraph_vector_ptr_t *edge_colors, igraph_db_support_measure_t *supp_fn,
-		igraph_integer_t min_supp, igraph_vector_ptr_t *frequent_subgraphs,
-		igraph_vector_t *support_values) {
+// ------------- GSPAN -------------
+
+// DFS code related (internal)
+
+typedef struct {
+  long int i; // source node
+  long int j; // target node
+  long int l_i; // source label
+  long int l_ij; // edge label
+  long int l_j; // target label
+} igraph_dfscode_edge_t;
+
+typedef struct {
+  igraph_dfscode_edge_t *edges;
+  long int last_edge;
+  long int max_edges;
+} igraph_dfscode_t;
+
+int igraph_i_dfscode_init(igraph_dfscode_t *dfscode, long int max_edges);
+int igraph_i_dfscode_init_copy(igraph_dfscode_t *dfscode_to, igraph_dfscode_t *dfscode_from);
+void igraph_i_dfscode_destroy(igraph_dfscode_t *dfscode);
+int igraph_i_dfscode_append(igraph_dfscode_t *dfscode, igraph_dfscode_edge_t edge);
+int igraph_i_dfscode_edge_compare(igraph_dfscode_edge_t *a, igraph_dfscode_edge_t *b);
+int igraph_i_dfscode_compare(igraph_dfscode_t *a, igraph_dfscode_t *b);
+
+int igraph_i_dfscode_init(igraph_dfscode_t *dfscode, long int max_edges) {
+  dfscode->edges = igraph_Calloc(max_edges, igraph_dfscode_edge_t);
+  if (dfscode->edges == NULL) {
+    return 1;
+  }
+  dfscode->last_edge = -1;
+  dfscode->max_edges = max_edges;
   return 0;
 }
 
+int igraph_i_dfscode_init_copy(igraph_dfscode_t *dfscode_to, igraph_dfscode_t *dfscode_from) {
+  IGRAPH_CHECK(igraph_i_dfscode_init(dfscode_to, dfscode_from->max_edges));
+  memcpy(dfscode_to->edges, dfscode_from->edges,
+	      sizeof(igraph_dfscode_edge_t)*dfscode_from->last_edge+1);
+  return 0;
+}
 
+void igraph_i_dfscode_destroy(igraph_dfscode_t *dfscode) {
+  igraph_free(dfscode->edges);
+}
+
+int igraph_i_dfscode_append(igraph_dfscode_t *dfscode, igraph_dfscode_edge_t edge) {
+  if (dfscode->last_edge == dfscode->max_edges+1) {
+    return 1;
+  }
+  dfscode->last_edge += 1;
+  dfscode->edges[dfscode->last_edge] = edge;
+  return 0;
+}
+
+// definition from CloseGraph paper (Yan & Han 2003)
+int igraph_i_dfscode_edge_compare(igraph_dfscode_edge_t *a, igraph_dfscode_edge_t *b) {
+  // first priority: DFS edge ordering (i,j)
+  if ((a->i < a->j) && (b->i < b->j)) {
+    // a and b are forward edges
+    if ((a->j < b->j) || ((a->i > b->i) && (a->j == b->j)))
+      return -1; // a < b
+  }
+  if ((a->i > a->j) && (b->i > b->j)) {
+    // a and b are backward edges
+    if ((a->i < b->i) || ((a->i == b->i) && (a->j < b->j))) {
+      return -1; // a < b
+    }
+  }
+  if ((a->i > a->j) && (b->i < b->j)) {
+    // a is backward, b is forward edge
+    if (a->i < b->j) {
+      return -1; // a < b
+    }
+  }
+  if ((a->i < a->j) && (b->i > b->j)) {
+    // a is forward, b is backward edge
+    if (a->j <= b->i) {
+      return -1; // a < b
+    }
+  }
+
+  if (a->i == b->i && a->j == b->j) {
+    // second priority: label of node i
+    if (a->l_i < b->l_i) {
+      return -1; // a < b
+    }
+    if (a->l_i == b->l_j) {
+      // third priority: label of edge (i,j)
+      if (a->l_ij < b->l_ij) {
+	return -1; // a < b
+      }
+      if (a->l_ij == b->l_ij) {
+	// fourth priority: label of node j
+	if (a->l_j < b->l_j) {
+	  return -1; // a < b
+	}
+	if (a->l_j == b->l_j) {
+	  // all entries are equal
+	  return 0; // a == b
+	}
+      }
+    }
+  }
+
+  return 1; // a > b
+}
+
+// DFS lexicographic order
+int igraph_i_dfscode_compare(igraph_dfscode_t *a, igraph_dfscode_t *b) {
+  long int min_len = (a->last_edge < b->last_edge) ? a->last_edge+1 : b->last_edge+1;
+  long int i;
+  int cmp;
+  for (i = 0; i < min_len; i++) {
+    cmp = igraph_i_dfscode_edge_compare(&a->edges[i], &b->edges[i]);
+    if (cmp == -1) {
+      return -1; // a < b
+    }
+    if (cmp == 0) {
+      continue;
+    }
+    return 1; // a > b
+  }
+
+  // the first min_len edges are equal, compare lengths
+  if (a->last_edge < b->last_edge) {
+    return -1; // a < b
+  }
+  if (a->last_edge == b->last_edge) {
+    return 0; // a == b
+  }
+  return 1; // a > b
+}
+
+// public interface
 // assert: #graphs == #vertex_colors == #edge_colors
 // assert: 0 <= node and edge colors <= MAX_COLOR
 // assert: min_supp > 0
@@ -659,6 +793,10 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	    if (supp >= min_supp) {
 	      printf("supp=%2ld   ", (long int) supp);
 	      igraph_i_print(&pattern_graph, &pattern_vcolor, &pattern_ecolor);
+	      // dfscode_edge = (igraph_dfscode_entry_t) {.i = 0, .j = 1,
+	      //		.l_i = VECTOR(pattern_vcolor)[0],
+	      //		.l_ij = VECTOR(pattern_ecolor)[0],
+	      //		.l_j = VECTOR(pattern_vcolor)[1]};
 	    }
 	  }
 	} else {
