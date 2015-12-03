@@ -574,9 +574,59 @@ int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
 
 // ------------- GSPAN -------------
 
+// Linked list (internal)
+
+typedef struct igraph_llist_item_t {
+  void *data;
+  struct igraph_llist_item_t *next;
+} igraph_llist_item_t;
+
+typedef struct igraph_llist_t {
+  igraph_llist_item_t *first;
+  igraph_llist_item_t *last;
+} igraph_llist_t;
+
+int igraph_i_llist_init(igraph_llist_t *llist);
+void igraph_i_llist_destroy(igraph_llist_t *llist);
+int igraph_i_llist_push_back(igraph_llist_t *llist, void *data);
+
+int igraph_i_llist_init(igraph_llist_t *llist) {
+  llist->first = NULL;
+  llist->last = NULL;
+  return 0;
+}
+
+void igraph_i_llist_destroy(igraph_llist_t *llist) {
+  igraph_llist_item_t *cur, *prev;
+  cur = llist->first;
+  while (cur != NULL) {
+    prev = cur;
+    cur = prev->next;
+    igraph_free(prev);
+  }
+}
+
+int igraph_i_llist_push_back(igraph_llist_t *llist, void *data) {
+  igraph_llist_item_t *new = igraph_Calloc(1, igraph_llist_item_t);
+  if (new == NULL) {
+    return 1;
+  }
+  new->data = data;
+  new->next = NULL;
+  if (llist->first == NULL) {
+    llist->first = new;
+    llist->last = new;
+  } else {
+    llist->last->next = new;
+    llist->last = new;
+  }
+  return 0;
+}
+
+
 // DFS code related (internal)
 
-typedef struct {
+typedef struct igraph_dfscode_edge_t {
   long int i; // source node
   long int j; // target node
   long int l_i; // source label
@@ -584,8 +634,8 @@ typedef struct {
   long int l_j; // target label
 } igraph_dfscode_edge_t;
 
-typedef struct {
-  igraph_dfscode_edge_t *edges;
+typedef struct igraph_dfscode_t {
+  igraph_dfscode_edge_t *stor_begin;
   long int last_edge;
   long int max_edges;
 } igraph_dfscode_t;
@@ -593,13 +643,14 @@ typedef struct {
 int igraph_i_dfscode_init(igraph_dfscode_t *dfscode, long int max_edges);
 int igraph_i_dfscode_init_copy(igraph_dfscode_t *dfscode_to, igraph_dfscode_t *dfscode_from);
 void igraph_i_dfscode_destroy(igraph_dfscode_t *dfscode);
-int igraph_i_dfscode_append(igraph_dfscode_t *dfscode, igraph_dfscode_edge_t edge);
+void igraph_i_dfscode_print(igraph_dfscode_t *dfscode);
+int igraph_i_dfscode_append(igraph_dfscode_t *dfscode, igraph_dfscode_edge_t *edge);
 int igraph_i_dfscode_edge_compare(igraph_dfscode_edge_t *a, igraph_dfscode_edge_t *b);
 int igraph_i_dfscode_compare(igraph_dfscode_t *a, igraph_dfscode_t *b);
 
 int igraph_i_dfscode_init(igraph_dfscode_t *dfscode, long int max_edges) {
-  dfscode->edges = igraph_Calloc(max_edges, igraph_dfscode_edge_t);
-  if (dfscode->edges == NULL) {
+  dfscode->stor_begin = igraph_Calloc(max_edges, igraph_dfscode_edge_t);
+  if (dfscode->stor_begin == NULL) {
     return 1;
   }
   dfscode->last_edge = -1;
@@ -609,21 +660,30 @@ int igraph_i_dfscode_init(igraph_dfscode_t *dfscode, long int max_edges) {
 
 int igraph_i_dfscode_init_copy(igraph_dfscode_t *dfscode_to, igraph_dfscode_t *dfscode_from) {
   IGRAPH_CHECK(igraph_i_dfscode_init(dfscode_to, dfscode_from->max_edges));
-  memcpy(dfscode_to->edges, dfscode_from->edges,
+  memcpy(dfscode_to->stor_begin, dfscode_from->stor_begin,
 	      sizeof(igraph_dfscode_edge_t)*dfscode_from->last_edge+1);
   return 0;
 }
 
 void igraph_i_dfscode_destroy(igraph_dfscode_t *dfscode) {
-  igraph_free(dfscode->edges);
+  igraph_free(dfscode->stor_begin);
 }
 
-int igraph_i_dfscode_append(igraph_dfscode_t *dfscode, igraph_dfscode_edge_t edge) {
+void igraph_i_dfscode_print(igraph_dfscode_t *dfscode) {
+  long int i;
+  for (i = 0; i < dfscode->last_edge+1; i++) {
+    printf("(%ld, %ld, %ld, %ld, %ld) ", VECTOR(*dfscode)[i].i, VECTOR(*dfscode)[i].j,
+	VECTOR(*dfscode)[i].l_i, VECTOR(*dfscode)[i].l_ij, VECTOR(*dfscode)[i].l_j);
+  }
+  printf("\n");
+}
+
+int igraph_i_dfscode_append(igraph_dfscode_t *dfscode, igraph_dfscode_edge_t *edge) {
   if (dfscode->last_edge == dfscode->max_edges+1) {
     return 1;
   }
   dfscode->last_edge += 1;
-  dfscode->edges[dfscode->last_edge] = edge;
+  VECTOR(*dfscode)[dfscode->last_edge] = *edge;
   return 0;
 }
 
@@ -686,7 +746,7 @@ int igraph_i_dfscode_compare(igraph_dfscode_t *a, igraph_dfscode_t *b) {
   long int i;
   int cmp;
   for (i = 0; i < min_len; i++) {
-    cmp = igraph_i_dfscode_edge_compare(&a->edges[i], &b->edges[i]);
+    cmp = igraph_i_dfscode_edge_compare(&VECTOR(*a)[i], &VECTOR(*b)[i]);
     if (cmp == -1) {
       return -1; // a < b
     }
@@ -713,15 +773,17 @@ int igraph_i_dfscode_compare(igraph_dfscode_t *a, igraph_dfscode_t *b) {
 // assert: undirected graphs
 int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
 		 const igraph_vector_ptr_t *edge_colors, igraph_db_support_measure_t *db_supp_measure,
-		 igraph_integer_t min_supp, igraph_vector_ptr_t *frequent_subgraphs,
-		 igraph_vector_t *support_values) {
+		 igraph_integer_t min_supp, igraph_integer_t max_edges,
+		 igraph_vector_ptr_t *frequent_subgraphs,
+		 igraph_vector_ptr_t *frequent_subgraph_vcolors,
+		 igraph_vector_ptr_t *frequent_subgraph_ecolors,
+		 igraph_vector_int_t *frequent_subgraph_supps) {
 
   long int graph_count = igraph_vector_ptr_size(graphs);
   long int i, j, k;
   igraph_vector_int_t vcolor_freq, ecolor_freq; // frequencies of all colors
   igraph_vector_int_t freq_ecolors, freq_vcolors; // lists of all frequent colors
   igraph_vector_int_t *vcolor, *ecolor;
-  igraph_integer_t supp;
   igraph_t *g;
 
   // FIND FREQUENT VERTEX AND EDGE COLORS
@@ -774,10 +836,24 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   // FIND FREQUENT 1-EDGE GRAPHS
 
   igraph_t pattern_graph;
+  igraph_t *pattern_graph_ptr;
   igraph_vector_int_t pattern_vcolor, pattern_ecolor;
-  igraph_full(&pattern_graph, 2, /*directed=*/ 0, /*self-loops=*/ 0);
-  igraph_vector_int_init(&pattern_vcolor, 2);
-  igraph_vector_int_init(&pattern_ecolor, 1);
+  igraph_vector_int_t *pattern_vcolor_ptr, *pattern_ecolor_ptr;
+  igraph_integer_t pattern_supp;
+  igraph_integer_t *pattern_supp_ptr;
+  igraph_dfscode_t *pattern_dfscode;
+  igraph_dfscode_edge_t pattern_dfscode_edge;
+  igraph_llist_t initial_patterns;
+  igraph_llist_t result_graph_list, result_vcolor_list, result_ecolor_list, result_supp_list;
+
+  IGRAPH_CHECK(igraph_full(&pattern_graph, 2, /*directed=*/ 0, /*self-loops=*/ 0));
+  IGRAPH_CHECK(igraph_vector_int_init(&pattern_vcolor, 2));
+  IGRAPH_CHECK(igraph_vector_int_init(&pattern_ecolor, 1));
+  IGRAPH_CHECK(igraph_i_llist_init(&initial_patterns));
+  IGRAPH_CHECK(igraph_i_llist_init(&result_graph_list));
+  IGRAPH_CHECK(igraph_i_llist_init(&result_vcolor_list));
+  IGRAPH_CHECK(igraph_i_llist_init(&result_ecolor_list));
+  IGRAPH_CHECK(igraph_i_llist_init(&result_supp_list));
 
   if (vertex_colors != NULL) {
     for (i = 0; VECTOR(freq_vcolors)[i] != -1; i++) {
@@ -789,23 +865,65 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	    // VC[i] -- EC[k] -- VC[j]
 	    VECTOR(pattern_ecolor)[0] = VECTOR(freq_ecolors)[k];
 	    db_supp_measure(graphs, vertex_colors, edge_colors, &pattern_graph,
-			    &pattern_vcolor, &pattern_ecolor, /*induced=*/ 0, &supp);
-	    if (supp >= min_supp) {
-	      printf("supp=%2ld   ", (long int) supp);
-	      igraph_i_print(&pattern_graph, &pattern_vcolor, &pattern_ecolor);
-	      // dfscode_edge = (igraph_dfscode_entry_t) {.i = 0, .j = 1,
-	      //		.l_i = VECTOR(pattern_vcolor)[0],
-	      //		.l_ij = VECTOR(pattern_ecolor)[0],
-	      //		.l_j = VECTOR(pattern_vcolor)[1]};
+			    &pattern_vcolor, &pattern_ecolor, /*induced=*/ 0, &pattern_supp);
+	    if (pattern_supp >= min_supp) {
+	      // initialize book-keeping data structures for DFS
+
+	      pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	      pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+				      .l_i = VECTOR(pattern_vcolor)[0],
+				      .l_ij = VECTOR(pattern_ecolor)[0],
+				      .l_j = VECTOR(pattern_vcolor)[1]};
+	      igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	      igraph_i_dfscode_append(pattern_dfscode, &pattern_dfscode_edge);
+	      igraph_i_llist_push_back(&initial_patterns, pattern_dfscode);
+
+	      // append graph to result
+
+	      pattern_graph_ptr = igraph_Calloc(1, igraph_t);
+	      pattern_vcolor_ptr = igraph_Calloc(1, igraph_vector_int_t);
+	      pattern_ecolor_ptr = igraph_Calloc(1, igraph_vector_int_t);
+	      pattern_supp_ptr = igraph_Calloc(1, igraph_integer_t);
+
+	      igraph_copy(pattern_graph_ptr, &pattern_graph);
+	      igraph_vector_int_copy(pattern_vcolor_ptr, &pattern_vcolor);
+	      igraph_vector_int_copy(pattern_ecolor_ptr, &pattern_ecolor);
+	      *pattern_supp_ptr = pattern_supp;
+
+	      igraph_i_llist_push_back(&result_graph_list, pattern_graph_ptr);
+	      igraph_i_llist_push_back(&result_vcolor_list, pattern_vcolor_ptr);
+	      igraph_i_llist_push_back(&result_ecolor_list, pattern_ecolor_ptr);
+	      igraph_i_llist_push_back(&result_supp_list, pattern_supp_ptr);
 	    }
 	  }
 	} else {
 	  // VC[i] -- VC[j]
 	  db_supp_measure(graphs, vertex_colors, NULL, &pattern_graph,
-			  &pattern_vcolor, NULL, /*induced=*/ 0, &supp);
-	  if (supp >= min_supp) {
-	    printf("supp=%2ld   ", (long int) supp);
-	    igraph_i_print(&pattern_graph, &pattern_vcolor, NULL);
+			  &pattern_vcolor, NULL, /*induced=*/ 0, &pattern_supp);
+	  if (pattern_supp >= min_supp) {
+	    // initialize book-keeping data structures for DFS
+	    pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	    pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+				    .l_i = VECTOR(pattern_vcolor)[0],
+				    .l_ij = 0,
+				    .l_j = VECTOR(pattern_vcolor)[1]};
+	    igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	    igraph_i_dfscode_append(pattern_dfscode, &pattern_dfscode_edge);
+	    igraph_i_llist_push_back(&initial_patterns, pattern_dfscode);
+
+	    // append graph to result
+
+	    pattern_graph_ptr = igraph_Calloc(1, igraph_t);
+	    pattern_vcolor_ptr = igraph_Calloc(1, igraph_vector_int_t);
+	    pattern_supp_ptr = igraph_Calloc(1, igraph_integer_t);
+
+	    igraph_copy(pattern_graph_ptr, &pattern_graph);
+	    igraph_vector_int_copy(pattern_vcolor_ptr, &pattern_vcolor);
+	    *pattern_supp_ptr = pattern_supp;
+
+	    igraph_i_llist_push_back(&result_graph_list, pattern_graph_ptr);
+	    igraph_i_llist_push_back(&result_vcolor_list, pattern_vcolor_ptr);
+	    igraph_i_llist_push_back(&result_supp_list, pattern_supp_ptr);
 	  }
 	}
       }
@@ -816,23 +934,95 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	// O -- EC[k] -- O
 	VECTOR(pattern_ecolor)[0] = VECTOR(freq_ecolors)[k];
 	db_supp_measure(graphs, NULL, edge_colors, &pattern_graph,
-			NULL, &pattern_ecolor, /*induced=*/ 0, &supp);
-	if (supp >= min_supp) {
-	  printf("supp=%2ld   ", (long int) supp);
-	  igraph_i_print(&pattern_graph, NULL, &pattern_ecolor);
+			NULL, &pattern_ecolor, /*induced=*/ 0, &pattern_supp);
+	if (pattern_supp >= min_supp) {
+	  // initialize book-keeping data structures for DFS
+	  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+				  .l_i = 0,
+				  .l_ij = VECTOR(pattern_ecolor)[0],
+				  .l_j = 0};
+	  igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	  igraph_i_dfscode_append(pattern_dfscode, &pattern_dfscode_edge);
+	  igraph_i_llist_push_back(&initial_patterns, pattern_dfscode);
+
+	  // append graph to result
+
+	  pattern_graph_ptr = igraph_Calloc(1, igraph_t);
+	  pattern_ecolor_ptr = igraph_Calloc(1, igraph_vector_int_t);
+	  pattern_supp_ptr = igraph_Calloc(1, igraph_integer_t);
+
+	  igraph_copy(pattern_graph_ptr, &pattern_graph);
+	  igraph_vector_int_copy(pattern_ecolor_ptr, &pattern_ecolor);
+	  *pattern_supp_ptr = pattern_supp;
+
+	  igraph_i_llist_push_back(&result_graph_list, pattern_graph_ptr);
+	  igraph_i_llist_push_back(&result_ecolor_list, pattern_ecolor_ptr);
+	  igraph_i_llist_push_back(&result_supp_list, pattern_supp_ptr);
 	}
       }
     } else {
       // O -- O
-      db_supp_measure(graphs, NULL, NULL, &pattern_graph, NULL, NULL, /*induced=*/ 0, &supp);
-      if (supp >= min_supp) {
-	printf("supp=%2ld   ", (long int) supp);
-	igraph_i_print(&pattern_graph, NULL, NULL);
+      db_supp_measure(graphs, NULL, NULL, &pattern_graph, NULL, NULL, /*induced=*/ 0, &pattern_supp);
+      if (pattern_supp >= min_supp) {
+	// initialize book-keeping data structures for DFS
+	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+				.l_i = 0,
+				.l_ij = 0,
+				.l_j = 0};
+	igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	igraph_i_dfscode_append(pattern_dfscode, &pattern_dfscode_edge);
+	igraph_i_llist_push_back(&initial_patterns, pattern_dfscode);
+
+	// append graph to result
+
+	pattern_graph_ptr = igraph_Calloc(1, igraph_t);
+	pattern_supp_ptr = igraph_Calloc(1, igraph_integer_t);
+
+	igraph_copy(pattern_graph_ptr, &pattern_graph);
+	*pattern_supp_ptr = pattern_supp;
+
+	igraph_i_llist_push_back(&result_graph_list, pattern_graph_ptr);
+	igraph_i_llist_push_back(&result_supp_list, pattern_supp_ptr);
       }
     }
   }
 
-  // TODO: recursively expand all frequent 1-edge graphs by pattern growth
+  igraph_llist_item_t *item;
+  for (item = initial_patterns.first; item != NULL; item = item->next) {
+    // TODO: recursively expand all frequent 1-edge graphs by pattern growth
+  }
+
+  // determine the total pattern count
+  long int pattern_count = 0;
+  for (item = result_graph_list.first; item != NULL; item = item->next)
+    pattern_count += 1;
+
+  // store result in the provided containers (if provided...)
+  // the user has to free the allocated memory
+  if (frequent_subgraphs != NULL) {
+    igraph_vector_ptr_resize(frequent_subgraphs, pattern_count);
+    for (item = result_graph_list.first, i = 0; item != NULL; item = item->next, i++)
+      VECTOR(*frequent_subgraphs)[i] = item->data;
+  }
+  if (frequent_subgraph_vcolors != NULL) {
+    igraph_vector_ptr_resize(frequent_subgraph_vcolors, pattern_count);
+    for (item = result_vcolor_list.first, i = 0; item != NULL; item = item->next, i++)
+      VECTOR(*frequent_subgraph_vcolors)[i] = item->data;
+  }
+  if (frequent_subgraph_ecolors != NULL) {
+    igraph_vector_ptr_resize(frequent_subgraph_ecolors, pattern_count);
+    for (item = result_ecolor_list.first, i = 0; item != NULL; item = item->next, i++)
+      VECTOR(*frequent_subgraph_ecolors)[i] = item->data;
+  }
+  if (frequent_subgraph_supps != NULL) {
+    igraph_vector_int_resize(frequent_subgraph_supps, pattern_count);
+    for (item = result_supp_list.first, i = 0; item != NULL; item = item->next, i++)
+      VECTOR(*frequent_subgraph_supps)[i] = *(long int *)item->data;
+  }
+
+  // clean up
 
   igraph_vector_int_destroy(&vcolor_freq);
   igraph_vector_int_destroy(&ecolor_freq);
@@ -841,6 +1031,39 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   igraph_vector_int_destroy(&pattern_vcolor);
   igraph_vector_int_destroy(&pattern_ecolor);
   igraph_destroy(&pattern_graph);
+
+  if (frequent_subgraphs == NULL) {
+    // the user doesn't want the result, so we have to free the allocated memory
+    for (item = result_graph_list.first; item != NULL; item = item->next) {
+      igraph_destroy((igraph_t *) item->data);
+    }
+  }
+  if (frequent_subgraph_vcolors == NULL) {
+    // same here
+    for (item = result_vcolor_list.first; item != NULL; item = item->next) {
+      igraph_vector_int_destroy((igraph_vector_int_t *) item->data);
+    }
+  }
+  if (frequent_subgraph_ecolors == NULL) {
+    // same here
+    for (item = result_ecolor_list.first; item != NULL; item = item->next) {
+      igraph_vector_int_destroy((igraph_vector_int_t *) item->data);
+    }
+  }
+
+  // temporary structures, can always be freed
+  for (item = initial_patterns.first; item != NULL; item = item->next) {
+    igraph_i_dfscode_destroy((igraph_dfscode_t *) item->data);
+  }
+  for (item = result_supp_list.first; item != NULL; item = item->next) {
+    igraph_free(item->data);
+  }
+
+  igraph_i_llist_destroy(&initial_patterns);
+  igraph_i_llist_destroy(&result_supp_list);
+  igraph_i_llist_destroy(&result_graph_list);
+  igraph_i_llist_destroy(&result_vcolor_list);
+  igraph_i_llist_destroy(&result_ecolor_list);
 
   return 0;
 }

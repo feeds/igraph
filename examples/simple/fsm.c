@@ -1,6 +1,41 @@
 #include <igraph.h>
 #include <stdio.h>
 
+void igraph_i_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
+                    const igraph_vector_int_t *ecolors) {
+  long int i;
+  if (vcolors != NULL) {
+    if (ecolors != NULL) {
+      for (i = 0; i < igraph_ecount(g); i++) {
+        printf("%ld(%d) --%d-- %ld(%d)\n", (long int) VECTOR(g->from)[i],
+                                           VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]],
+                                           VECTOR(*ecolors)[i],
+                                           (long int) VECTOR(g->to)[i],
+                                           VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]]);
+      }
+    } else {
+      for (i = 0; i < igraph_ecount(g); i++) {
+        printf("%ld(%d) -- %ld(%d)\n", (long int) VECTOR(g->from)[i],
+                                       VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]],
+                                       (long int) VECTOR(g->to)[i],
+                                       VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]]);
+      }
+    }
+  } else {
+    if (ecolors != NULL) {
+      for (i = 0; i < igraph_ecount(g); i++) {
+        printf("%ld --%d-- %ld\n", (long int) VECTOR(g->from)[i],
+                                   VECTOR(*ecolors)[i],
+                                   (long int) VECTOR(g->to)[i]);
+      }
+    } else {
+      for (i = 0; i < igraph_ecount(g); i++) {
+        printf("%ld -- %ld\n", (long int) VECTOR(g->from)[i], (long int) VECTOR(g->to)[i]);
+      }
+    }
+  }
+}
+
 int match_rings_induced() {
   igraph_t ro, rc;
   igraph_bool_t iso;
@@ -85,11 +120,11 @@ int match_rings_noninduced() {
 
 int gspan() {
   igraph_t rc;
-  igraph_vector_int_t vcolor, ecolor;
-
-  igraph_vector_ptr_t graphs;
-  igraph_vector_ptr_t vertex_colors;
-  igraph_vector_ptr_t edge_colors;
+  igraph_vector_int_t vcolor, ecolor, result_supps;
+  igraph_vector_ptr_t graphs, result_graphs;
+  igraph_vector_ptr_t vertex_colors, result_vertex_colors;
+  igraph_vector_ptr_t edge_colors, result_edge_colors;
+  long int i;
 
   igraph_ring(&rc, 10, /*directed=*/ 0, /*mutual=*/ 0, /*circular=*/ 1);
 
@@ -116,20 +151,53 @@ int gspan() {
 
   printf("GSPAN\n\n");
 
-  printf("no labels\n");
-  igraph_gspan(&graphs, NULL, NULL, &igraph_db_mib_support, /*min_supp=*/ 1, NULL, NULL);
+  igraph_vector_ptr_init(&result_graphs, 0);
+  igraph_vector_ptr_init(&result_vertex_colors, 0);
+  igraph_vector_ptr_init(&result_edge_colors, 0);
+  igraph_vector_int_init(&result_supps, 0);
 
-  printf("\nvertex labels\n");
+  printf("no labels\n\n");
+  igraph_gspan(&graphs, NULL, NULL, &igraph_db_mib_support, /*min_supp=*/ 1, /*max_edges=*/ 5,
+      &result_graphs, NULL, NULL, &result_supps);
+  for (i = 0; i < igraph_vector_ptr_size(&result_graphs); i++) {
+    printf("supp=%ld\n", (long int) VECTOR(result_supps)[i]);
+    igraph_i_print((igraph_t *) VECTOR(result_graphs)[i], NULL, NULL);
+    printf("\n");
+  }
+
+  printf("\nvertex labels\n\n");
   igraph_gspan(&graphs, &vertex_colors, NULL,
-               &igraph_db_mib_support, /*min_supp=*/ 1, NULL, NULL);
+               &igraph_db_mib_support, /*min_supp=*/ 1, /*max_edges=*/ 5,
+               &result_graphs, &result_vertex_colors, NULL, &result_supps);
+  for (i = 0; i < igraph_vector_ptr_size(&result_graphs); i++) {
+    printf("supp=%ld\n", (long int) VECTOR(result_supps)[i]);
+    igraph_i_print((igraph_t *) VECTOR(result_graphs)[i],
+                   (igraph_vector_int_t *) VECTOR(result_vertex_colors)[i], NULL);
+    printf("\n");
+  }
 
-  printf("\nedge labels\n");
+  printf("\nedge labels\n\n");
   igraph_gspan(&graphs, NULL, &edge_colors,
-               &igraph_db_mib_support, /*min_supp=*/ 1, NULL, NULL);
+               &igraph_db_mib_support, /*min_supp=*/ 1, /*max_edges=*/ 5,
+               &result_graphs, NULL, &result_edge_colors, &result_supps);
+  for (i = 0; i < igraph_vector_ptr_size(&result_graphs); i++) {
+    printf("supp=%ld\n", (long int) VECTOR(result_supps)[i]);
+    igraph_i_print((igraph_t *) VECTOR(result_graphs)[i], NULL,
+                   (igraph_vector_int_t *) VECTOR(result_edge_colors)[i]);
+    printf("\n");
+  }
 
-  printf("\nvertex and edge labels\n");
+  printf("\nvertex and edge labels\n\n");
   igraph_gspan(&graphs, &vertex_colors, &edge_colors,
-               &igraph_db_mib_support, /*min_supp=*/ 1, NULL, NULL);
+               &igraph_db_mib_support, /*min_supp=*/ 1, /*max_edges=*/ 5,
+               &result_graphs, &result_vertex_colors, &result_edge_colors, &result_supps);
+  for (i = 0; i < igraph_vector_ptr_size(&result_graphs); i++) {
+    printf("supp=%ld\n", (long int) VECTOR(result_supps)[i]);
+    igraph_i_print((igraph_t *) VECTOR(result_graphs)[i],
+                   (igraph_vector_int_t *) VECTOR(result_vertex_colors)[i],
+                   (igraph_vector_int_t *) VECTOR(result_edge_colors)[i]);
+    printf("\n");
+  }
 
   igraph_destroy(&rc);
   igraph_vector_ptr_destroy(&graphs);

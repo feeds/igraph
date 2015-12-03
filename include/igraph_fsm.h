@@ -150,8 +150,11 @@ int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
 
 int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
 		const igraph_vector_ptr_t *edge_colors, igraph_db_support_measure_t *supp_measure,
-		igraph_integer_t min_supp, igraph_vector_ptr_t *frequent_subgraphs,
-		igraph_vector_t *support_values);
+		igraph_integer_t min_supp, igraph_integer_t max_edges,
+		igraph_vector_ptr_t *frequent_subgraphs,
+		igraph_vector_ptr_t *frequent_subgraph_vcolors,
+		igraph_vector_ptr_t *frequent_subgraph_ecolors,
+		igraph_vector_int_t *frequent_subgraph_supps);
 
 __END_DECLS
 
