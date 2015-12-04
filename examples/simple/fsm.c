@@ -1,6 +1,8 @@
 #include <igraph.h>
 #include <stdio.h>
 
+#define MIN_SUPP 2
+
 void igraph_i_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
                     const igraph_vector_int_t *ecolors) {
   long int i;
@@ -157,7 +159,7 @@ int gspan() {
   igraph_vector_int_init(&result_supps, 0);
 
   printf("no labels\n\n");
-  igraph_gspan(&graphs, NULL, NULL, &igraph_db_mib_support, /*min_supp=*/ 1, /*max_edges=*/ 5,
+  igraph_gspan(&graphs, NULL, NULL, &igraph_db_mib_support, MIN_SUPP, /*max_edges=*/ 5,
       &result_graphs, NULL, NULL, &result_supps);
   for (i = 0; i < igraph_vector_ptr_size(&result_graphs); i++) {
     printf("supp=%ld\n", (long int) VECTOR(result_supps)[i]);
@@ -167,7 +169,7 @@ int gspan() {
 
   printf("\nvertex labels\n\n");
   igraph_gspan(&graphs, &vertex_colors, NULL,
-               &igraph_db_mib_support, /*min_supp=*/ 1, /*max_edges=*/ 5,
+               &igraph_db_mib_support, MIN_SUPP, /*max_edges=*/ 5,
                &result_graphs, &result_vertex_colors, NULL, &result_supps);
   for (i = 0; i < igraph_vector_ptr_size(&result_graphs); i++) {
     printf("supp=%ld\n", (long int) VECTOR(result_supps)[i]);
@@ -178,7 +180,7 @@ int gspan() {
 
   printf("\nedge labels\n\n");
   igraph_gspan(&graphs, NULL, &edge_colors,
-               &igraph_db_mib_support, /*min_supp=*/ 1, /*max_edges=*/ 5,
+               &igraph_db_mib_support, MIN_SUPP, /*max_edges=*/ 5,
                &result_graphs, NULL, &result_edge_colors, &result_supps);
   for (i = 0; i < igraph_vector_ptr_size(&result_graphs); i++) {
     printf("supp=%ld\n", (long int) VECTOR(result_supps)[i]);
@@ -189,7 +191,7 @@ int gspan() {
 
   printf("\nvertex and edge labels\n\n");
   igraph_gspan(&graphs, &vertex_colors, &edge_colors,
-               &igraph_db_mib_support, /*min_supp=*/ 1, /*max_edges=*/ 5,
+               &igraph_db_mib_support, MIN_SUPP, /*max_edges=*/ 5,
                &result_graphs, &result_vertex_colors, &result_edge_colors, &result_supps);
   for (i = 0; i < igraph_vector_ptr_size(&result_graphs); i++) {
     printf("supp=%ld\n", (long int) VECTOR(result_supps)[i]);
