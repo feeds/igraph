@@ -673,7 +673,12 @@ int igraph_i_dfscode_edge_compare(const igraph_dfscode_edge_t *a, const igraph_d
 int igraph_i_dfscode_compare(const igraph_dfscode_t *a, const igraph_dfscode_t *b);
 int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors);
-igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode);
+igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igraph_t *graph,
+		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors);
+igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode, igraph_t *graph,
+		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors,
+		long int dfscode_pos, igraph_vector_int_t *ordering, long int ordering_pos,
+		igraph_vector_int_t *visited_nodes);
 int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		const igraph_vector_ptr_t *vertex_colors, const igraph_vector_ptr_t *edge_colors,
 		igraph_db_support_measure_t *db_supp_measure,
@@ -839,12 +844,150 @@ int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_t *graph,
   return 0;
 }
 
-igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode) {
-  // TODO: implement me using Borgelt (2006) paper
+// Mentioned briefly in [Yan & Han 2002], DFS version of [Borgelt 2006]:
+// Perform DFS using all possible nodes as the root node to check whether a smaller
+// code than dfscode can be constructed. As soon as we have found a smaller prefix, we
+// can terminate.
+// Original paper says: almost the same as enumerating all automorphisms, but taking
+// advantage of the prefix property for pruning.
+// TODO: only works for undirected graphs!!!
+igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igraph_t *graph,
+		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors) {
+  long int root;
+  igraph_vector_int_t visited_nodes, ordering;
+  igraph_bool_t is_smaller;
+
   igraph_i_dfscode_print(dfscode);
+
+  if (igraph_i_dfscode_size(dfscode) <= 1) {
+    // always minimal
+    // TODO: wrong if the edge is not (0, 1, ...)
+    return 1;
+  }
+
+  IGRAPH_CHECK(igraph_vector_int_init(&visited_nodes, igraph_vcount(graph)));
+  IGRAPH_CHECK(igraph_vector_int_init(&ordering, igraph_vcount(graph)));
+
+  for (root = 0; root < igraph_vcount(graph); root++) {
+    if (vertex_colors) {
+      if (VECTOR(*vertex_colors)[root] < VECTOR(*dfscode)[0].l_i) {
+	// new root has a smaller label than dfscode root. dfscode not minimal.
+	igraph_vector_int_destroy(&ordering);
+	igraph_vector_int_destroy(&visited_nodes);
+	return 0;
+      }
+      if (VECTOR(*vertex_colors)[root] > VECTOR(*dfscode)[0].l_i) {
+	// new root has a larger label than dfscode root. it cannot give a smaller DFS code.
+	continue;
+      }
+    }
+
+    // recursively build all DFS orderings starting from this root node
+    VECTOR(ordering)[0] = root;
+    VECTOR(visited_nodes)[root] = 1;
+    is_smaller = igraph_i_dfscode_is_canonical_rec(dfscode, graph, vertex_colors, edge_colors,
+						   0, &ordering, 0, &visited_nodes);
+    if (!is_smaller) {
+      // dfscode is not smaller than the code grown from by DFS from this root node,
+      // hence it is not minimal
+      igraph_vector_int_destroy(&ordering);
+      igraph_vector_int_destroy(&visited_nodes);
+      return 0;
+    }
+    VECTOR(visited_nodes)[root] = 0;
+
+    // TODO: how to handle backward edges that are not part of the DFS tree?
+  }
+
+  // dfscode is smaller than or equal to all codes grown from any other root node,
+  // hence it is minimal
+  igraph_vector_int_destroy(&ordering);
+  igraph_vector_int_destroy(&visited_nodes);
   return 1;
 }
 
+
+igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode, igraph_t *graph,
+		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors,
+		long int dfscode_pos, igraph_vector_int_t *ordering, long int ordering_pos,
+		igraph_vector_int_t *visited_nodes) {
+  long int i, neigh, ext_node, ext_node_pos;
+  int cmp;
+  igraph_dfscode_edge_t new_edge;
+  igraph_integer_t eid;
+  igraph_bool_t is_less_eq;
+
+  // find the next extendable node
+  for (i = ordering_pos; i >= 0; i--) {
+    // TODO: check if there is a non-visited neighbor
+    // then ext_node_pos = i; break;
+  }
+  ext_node_pos = ordering_pos; // TODO
+  ext_node  = VECTOR(*ordering)[ext_node_pos];
+
+  // iterate over all neighbors
+  // TODO: sort neighbors by label (smallest first)
+  for (i = 0; i < DEGREE(*graph, ext_node); i++) {
+    // TODO: check if there is a neighbor that is reachable via a smaller edge than
+    // the existing one from dfscode[dfscode_pos] <---- what?? why??
+
+    neigh = NEIGHBOR(*graph, ext_node, i);
+    if (VECTOR(*visited_nodes)[neigh] == 1) {
+      // skip visited neighbors
+      continue;
+    }
+
+    // check if visiting the current neighbor would result in an edge code smaller
+    // than the one from dfscode
+
+    new_edge = (igraph_dfscode_edge_t) {.i = ext_node_pos, .j = ordering_pos+1};
+    if (vertex_colors) {
+      new_edge.l_i = VECTOR(*vertex_colors)[ext_node];
+      new_edge.l_j = VECTOR(*vertex_colors)[neigh];
+    }
+    if (edge_colors) {
+      igraph_get_eid(graph, &eid, ext_node, neigh, 1, 0);
+      new_edge.l_ij = VECTOR(*edge_colors)[eid];
+    }
+
+    cmp = igraph_i_dfscode_edge_compare(&new_edge, &VECTOR(*dfscode)[dfscode_pos]);
+    if (cmp == -1) {
+      // new edge is smaller, dfscode not minimal
+      return 0;
+    } else if (cmp == 1) {
+      // new edge is larger, cannot result in smaller code at later point in time,
+      // try next neighbor
+      // TODO: if we sort the neighbors, we can terminate return 1 here
+      continue;
+    }
+
+    // new edge is equal to existing one, continue DFS with the current node ordering
+    VECTOR(*ordering)[ordering_pos+1] = neigh;
+    VECTOR(*visited_nodes)[neigh] = 1;
+    is_less_eq = igraph_i_dfscode_is_canonical_rec(dfscode, graph, vertex_colors, edge_colors,
+						   dfscode_pos+1, ordering, ordering_pos+1,
+						   visited_nodes);
+    if (!is_less_eq) {
+      // we can grow a DFS code from the current node ordering that is smaller than dfscode,
+      // hence dfscode is not minimal
+      return 0;
+    }
+    VECTOR(*visited_nodes)[neigh] = 0;
+
+    // dfscode is less than or equal to all DFS codes grown from the current node ordering
+    // try the next assignment for position ordering_pos
+  }
+
+  // dfscode is less than or equal to all DFS codes grown from the current node ordering
+  // for all assignments for position ordering_pos, perform backtracking
+  return 1;
+}
+
+
+
+
+// TODO: check that a new edge is larger than all existing edges incident to the target
+// node (for backward extension) or the source node (for forward extension)
 int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		const igraph_vector_ptr_t *vertex_colors, const igraph_vector_ptr_t *edge_colors,
 		igraph_db_support_measure_t *db_supp_measure,
@@ -862,15 +1005,30 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
   igraph_vector_int_t *seed_ecolors;
   igraph_integer_t *seed_supp;
 
-  // compute seed support
+  // create graph from DFS code
   seed_graph = igraph_Calloc(1, igraph_t);
   seed_vcolors = igraph_Calloc(1, igraph_vector_int_t);
   seed_ecolors = igraph_Calloc(1, igraph_vector_int_t);
   seed_supp = igraph_Calloc(1, igraph_integer_t);
   IGRAPH_CHECK(igraph_i_dfscode_to_graph(seed_dfscode, seed_graph, seed_vcolors, seed_ecolors));
+
+  if (!igraph_i_dfscode_is_canonical(seed_dfscode, seed_graph, seed_vcolors, seed_ecolors)) {
+    printf("   not canonical\n");
+
+    // seed not in canonical form, prune
+    igraph_destroy(seed_graph);
+    igraph_vector_int_destroy(seed_vcolors);
+    igraph_vector_int_destroy(seed_ecolors);
+    igraph_free(seed_graph);
+    igraph_free(seed_vcolors);
+    igraph_free(seed_ecolors);
+    igraph_free(seed_supp);
+    return 0;
+  }
+
+  // compute seed support
   db_supp_measure(graphs, vertex_colors, edge_colors, seed_graph,
 		  seed_vcolors, seed_ecolors, /*induced=*/ 0, seed_supp);
-
   if (*seed_supp < min_supp) {
     // infrequent seed, free memory and prune
     igraph_destroy(seed_graph);
@@ -887,12 +1045,6 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     igraph_i_llist_push_back(result_vcolor_list, seed_vcolors);
     igraph_i_llist_push_back(result_ecolor_list, seed_ecolors);
     igraph_i_llist_push_back(result_supp_list, seed_supp);
-  }
-
-  // TODO: move to beginning!!!
-  if (!igraph_i_dfscode_is_canonical(seed_dfscode)) {
-    // seed not in canonical form, prune
-    return 0;
   }
 
   if (igraph_i_dfscode_size(seed_dfscode) == max_edges) {
