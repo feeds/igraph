@@ -858,8 +858,6 @@ igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igr
   igraph_vector_int_t visited_nodes, ordering;
   igraph_bool_t is_smaller;
 
-  //igraph_i_dfscode_print(dfscode);
-
   if (igraph_i_dfscode_size(dfscode) == 0) {
     // always minimal
     return 1;
@@ -895,7 +893,7 @@ igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igr
     is_smaller = igraph_i_dfscode_is_canonical_rec(dfscode, graph, vertex_colors, edge_colors,
 						   0, &ordering, 0, &visited_nodes);
     if (!is_smaller) {
-      // dfscode is not smaller than all codes grown by DFS from this root node,
+      // dfscode is not smaller than or equal to all codes grown by DFS from this root node,
       // hence it is not minimal
       igraph_vector_int_destroy(&ordering);
       igraph_vector_int_destroy(&visited_nodes);
@@ -912,6 +910,10 @@ igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igr
 }
 
 
+// Check if the provided dfscode is smaller than or equal to all codes that can be grown
+// from the provided partial DFS ordering. The code is assumed to be equal up to dfscode_pos.
+// Returns TRUE (1) if the provided dfscode is smaller than or equal to all codes, FALSE (0)
+// if a code is found that is smaller than dfscode.
 igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode, igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors,
 		long int dfscode_pos, igraph_vector_int_t *ordering, long int ordering_pos,
@@ -1053,8 +1055,11 @@ igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode,
 
 
 
-// TODO: check that a new edge is larger than all existing edges incident to the target
-// node (for backward extension) or the source node (for forward extension)
+// TODO: Implement speed-up for labelled graphs:
+// Check that a new edge is larger than all existing edges incident to the target
+// node (for backward extension) or the source node (for forward extension from any
+// node other than right-most vertex). Otherwise, the resulting DFS code can not be
+// minimal. See Yan & Han (2002), Section 5.1 (2), and Borgelt (2006), Section 4.
 int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		const igraph_vector_ptr_t *vertex_colors, const igraph_vector_ptr_t *edge_colors,
 		igraph_db_support_measure_t *db_supp_measure,
@@ -1079,9 +1084,10 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
   seed_supp = igraph_Calloc(1, igraph_integer_t);
   IGRAPH_CHECK(igraph_i_dfscode_to_graph(seed_dfscode, seed_graph, seed_vcolors, seed_ecolors));
 
+  igraph_i_dfscode_print(seed_dfscode);
   if (!igraph_i_dfscode_is_canonical(seed_dfscode, seed_graph, seed_vcolors, seed_ecolors)) {
     // seed not in canonical form, prune
-    //printf("   not canonical\n");
+    printf("   not canonical\n");
     igraph_destroy(seed_graph);
     igraph_vector_int_destroy(seed_vcolors);
     igraph_vector_int_destroy(seed_ecolors);
