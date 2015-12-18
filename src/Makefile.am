@@ -264,7 +264,7 @@ HEADERS_PRIVATE = atlas-edges.h \
 		drl_Node.h	drl_Node_3d.h \
 		DensityGrid.h	DensityGrid_3d.h \
 		igraph_flow_internal.h \
-		vector.pmt matrix.pmt stack.pmt dqueue.pmt heap.pmt array.pmt \
+		vector.pmt matrix.pmt stack.pmt dqueue.pmt heap.pmt array.pmt list.pmt \
 		igraph_types_internal.h \
 		foreign-dl-header.h bignum.h bigint.h \
 		gengraph_box_list.h gengraph_definitions.h \
@@ -287,7 +287,7 @@ HEADERS_PUBLIC =../include/igraph.h 		../include/igraph_memory.h    \
 		../include/igraph_vector.h 	../include/igraph_matrix.h    \
 		../include/igraph_array.h 	../include/igraph_dqueue.h    \
 		../include/igraph_stack.h 	../include/igraph_heap.h      \
-		../include/igraph_arpack.h 	\
+		../include/igraph_list.h 	../include/igraph_arpack.h 	\
 		../include/igraph_attributes.h 	../include/igraph_error.h     \
 		../include/igraph_pmt.h 	../include/igraph_pmt_off.h   \
 		../include/igraph_adjlist.h	../include/igraph_iterators.h \
@@ -320,7 +320,8 @@ HEADERS_PUBLIC =../include/igraph.h 		../include/igraph_memory.h    \
 		../include/igraph_matching.h	../include/igraph_embedding.h \
 	        ../include/igraph_scan.h        ../include/igraph_graphlets.h \
 		../include/igraph_vector_type.h ../include/igraph_epidemics.h \
-		../include/igraph_lsap.h ../include/igraph_dynamic.h
+		../include/igraph_lsap.h ../include/igraph_dynamic.h \
+		../include/igraph_list_pmt.h
 
 SOURCES = 		     basic_query.c games.c cocitation.c iterators.c \
 			     structural_properties.c components.c layout.c \
@@ -333,7 +334,7 @@ SOURCES = 		     basic_query.c games.c cocitation.c iterators.c \
 			     foreign-pajek-parser.y foreign-pajek-lexer.l \
 			     foreign-gml-parser.y foreign-gml-lexer.l \
 			     dqueue.c heap.c igraph_heap.c igraph_stack.c \
-			     igraph_strvector.c igraph_trie.c matrix.c \
+			     igraph_strvector.c igraph_trie.c matrix.c igraph_list.c \
 			     vector.c vector_ptr.c memory.c adjlist.c \
 			     visitors.c igraph_grid.c atlas.c fsm.c topology.c \
 			     motifs.c dynamic.c progress.c operators.c \

@@ -1,0 +1,59 @@
+/* vim:set ts=8 sw=2 sts=2 noet:  */
+/* 
+   Linked list datatype
+   Copyright (C) 2015  Erik Scharwaechter <erik.scharwaechter@rwth-aachen.de>
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 
+   02110-1301 USA
+
+*/
+
+#include "igraph_memory.h"
+
+int FUNCTION(igraph_llist,init)(TYPE(igraph_llist) *llist) {
+  llist->first = NULL;
+  llist->last = NULL;
+  return 0;
+}
+
+void FUNCTION(igraph_llist,destroy)(TYPE(igraph_llist) *llist) {
+  TYPE(igraph_llist_item) *cur, *prev;
+  cur = llist->first;
+  while (cur != NULL) {
+    prev = cur;
+    cur = prev->next;
+    igraph_free(prev);
+  }
+}
+
+int FUNCTION(igraph_llist,push_back)(TYPE(igraph_llist) *llist, BASE data) {
+  TYPE(igraph_llist_item) *new = igraph_Calloc(1, TYPE(igraph_llist_item));
+  if (new == NULL) {
+    return 1;
+  }
+  new->data = data;
+  new->next = NULL;
+  new->prev = llist->last;
+
+  if (llist->last == NULL) {
+    llist->last = new;
+    llist->first = new;
+  } else {
+    llist->last->next = new;
+    llist->last = new;
+  }
+  return 0;
+}
+
