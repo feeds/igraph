@@ -1,6 +1,6 @@
 /* vim:set ts=8 sw=2 sts=2 noet:  */
 /* 
-   IGraph library: frequent subgraph mining algorithms
+   Frequent subgraph mining algorithms
    Copyright (C) 2015  Erik Scharwaechter <erik.scharwaechter@rwth-aachen.de>
 
    This program is free software; you can redistribute it and/or modify
@@ -83,17 +83,27 @@ igraph_bool_t igraph_i_mib_isohandler(const igraph_vector_t *map12,
 
 // graph1 is the larger graph, graph2 is the smaller graph
 // Can handle a single fixed assignment (pattern node, target node) passed as a length-2 vector
-// NOTE: Only works for connected pattern graphs!
+//
+// NOTE: Only works for connected pattern graphs! Can be extended to non-connected graphs
+// by restarting DFS for all connected components.
+//
+// DFS version of the RI algorithm by Bonnici et al.: "A subgraph isomorphism algorithm
+// and its application to biochemical data", in: BMC Bioinformatics, vol. 14(7), 2013.
+// We assume that DFS performs better than the original GreatestConstraintFirst search
+// strategy, because it guarantees (for connected graphs) that every pattern node has a
+// well-defined parent. In the original paper, parents can be undefined, which means that
+// all target nodes are candidates.
 //
 // Algorithm:
 //    1) build a DFS ordering of the pattern nodes (intuition: when matching the next node
-//       starting from a partial solution, we only have to consider the neighbors of all
-//       previously matched target nodes
+//       starting from a partial solution, we only have to consider the neighbors of the
+//       current node's parent, and avoid an open search over all possible target assignments)
 //    2) match all pattern nodes in the order specified by the DFS ordering, using the neighbors
 //       of their DFS parents as candidates, while maintaining the subgraph isomorphism
 //       properties for every partial solution (matching node labels, matching degrees, matching
 //       edges, in that order)
 //
+// The implementation makes heavy use of the internals of the igraph_t data type.
 int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 			   const igraph_vector_int_t *vertex_color1,
 			   const igraph_vector_int_t *vertex_color2,
@@ -106,7 +116,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   long int vcount2 = igraph_vcount(graph2);
   long int i, j, fixed_count, partial_solution_pos, pred;
   long int pattern_node, other_pattern_node, target_node, other_target_node;
-  long int indeg1, indeg2, outdeg1, outdeg2;
+  long int indeg1, indeg2, outdeg1, outdeg2, max_deg;
   igraph_integer_t eid1, eid2;
   int end, success;
   igraph_vector_t node_ordering;
@@ -116,29 +126,33 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   igraph_vector_t state_target_node;
   igraph_stack_t dfs_node_stack;
   igraph_stack_t dfs_pred_stack;
-  igraph_bool_t conn, directed;
+  igraph_bool_t directed;
 
   *iso = 0;
   end = 0;
   success = 1;
   directed = igraph_is_directed(graph1);
 
-  // TODO: currently works only for connected patterns
-  IGRAPH_CHECK(igraph_is_connected(graph2, &conn, IGRAPH_WEAK));
-  if (!conn) {
-    *iso = 0;
-    return 1;
-  }
+  // STEP 0: create a static ordering of the pattern nodes by DFS
+  // if a fixed assignment is given, use this node as root, otherwise take the one with
+  // the largest degree (heuristic for better pruning from RI algorithm)
 
-  // create a static ordering of the pattern nodes by DFS
-  // if a fixed assignment is given, use this node as root, otherwise take the one with index 0
   IGRAPH_CHECK(igraph_stack_init(&dfs_node_stack, vcount2*vcount2));
   IGRAPH_CHECK(igraph_stack_init(&dfs_pred_stack, vcount2*vcount2));
   IGRAPH_CHECK(igraph_vector_init(&node_ordering, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&pred_idx, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&visited, vcount2));
+
   if (fixed == NULL) {
-    IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, 0));
+    // get maximum degree vertex
+    max_deg = 0; j = 0;
+    for (i = 0; i < vcount2; i++) {
+      if (DEGREE(*graph2, i) > max_deg) {
+	max_deg = DEGREE(*graph2, i);
+	j = i;
+      }
+    }
+    IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, j));
     fixed_count = 0;
   } else {
     IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, VECTOR(*fixed)[0]));
@@ -149,20 +163,34 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   while (!igraph_stack_empty(&dfs_node_stack)) {
     pattern_node = (long int) igraph_stack_pop(&dfs_node_stack);
     pred = (long int) igraph_stack_pop(&dfs_pred_stack);
-    if (VECTOR(visited)[pattern_node] == 0) {
-      // insert current node into ordering and set predecessor index
-      VECTOR(node_ordering)[i] = pattern_node;
-      VECTOR(pred_idx)[i] = pred;
+    if (VECTOR(visited)[pattern_node] == 1)
+      continue;
 
-      // add neighbors to stack
-      for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
-	IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
-	IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
-      }
+    // insert current node into ordering and set predecessor index
+    VECTOR(node_ordering)[i] = pattern_node;
+    VECTOR(pred_idx)[i] = pred;
 
-      VECTOR(visited)[pattern_node] = 1;
-      i++;
+    // add neighbors to stack, in the order specified by RI's scoring functions
+    for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
+      if (VECTOR(visited)[NEIGHBOR(*graph2, pattern_node, j)] == 1)
+        continue;
+      IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
+      IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
     }
+
+    VECTOR(visited)[pattern_node] = 1;
+    i++;
+  }
+
+  // if not all vertices have been visited, the graph is not connected. Abort.
+  if (igraph_vector_contains(&visited, 0)) {
+    *iso = 0;
+    igraph_stack_destroy(&dfs_node_stack);
+    igraph_stack_destroy(&dfs_pred_stack);
+    igraph_vector_destroy(&node_ordering);
+    igraph_vector_destroy(&pred_idx);
+    igraph_vector_destroy(&visited);
+    return 1;
   }
 
   // initialize the state representation
@@ -407,10 +435,11 @@ int igraph_mib_support(const igraph_t *graph1,
 		       igraph_bool_t induced,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp) {
-  igraph_vector_t target_counts, fixed;
+  igraph_vector_t fixed;
   igraph_bool_t iso;
   long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
   long int i, j, automorphic_node;
+  igraph_integer_t cur_supp, cur_count;
 
   IGRAPH_CHECK(igraph_vector_init(&fixed, 2));
 
@@ -435,7 +464,7 @@ int igraph_mib_support(const igraph_t *graph1,
   }
 
   // test all possible pairs (pattern node i, target node j) for isomorphism
-  IGRAPH_CHECK(igraph_vector_init(&target_counts, vcount2));
+  cur_supp = -1;
   for (i = 0; i < vcount2; i++) {
     VECTOR(fixed)[0] = i; // force assignment: pattern node i
 
@@ -447,42 +476,59 @@ int igraph_mib_support(const igraph_t *graph1,
 	break;
       }
     }
-
     if (automorphic_node >= 0) {
-      // we found an automorphic node, reuse its result
-      VECTOR(target_counts)[i] = VECTOR(target_counts)[j];
-    } else {
-      // no automorphic node found, test all possible target assignments
-      for (j = 0; j < vcount1; j++) {
-	VECTOR(fixed)[1] = j; // force assignment: target node j
-	iso = 0;
-	if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
-		edge_color2, induced, &fixed, &iso)) {
-	  igraph_vector_destroy(&target_counts);
-	  igraph_vector_destroy(&fixed);
-	  return 1;
-	}
-	if (iso) {
-	  VECTOR(target_counts)[i] = VECTOR(target_counts)[i] + 1;
-	}
-      }
+      continue;
+    }
 
-      // early termination: the support can only be smaller than or equal to
-      // VECTOR(target_counts)[i].
-      // if that value is already smaller than min_supp, we don't need to continue.
-      if (min_supp >= 0 && VECTOR(target_counts)[i] < min_supp) {
-	*support = 0;
-	igraph_vector_destroy(&target_counts);
-	igraph_vector_destroy(&fixed);
-	igraph_matrix_destroy(&automorphic_nodes);
-	return 0;
+    // no automorphic node found, test all possible target assignments
+    cur_count = 0;
+    for (j = 0; j < vcount1; j++) {
+      VECTOR(fixed)[1] = j; // force assignment: target node j
+      iso = 0;
+      if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
+	edge_color2, induced, &fixed, &iso)) {
+        igraph_vector_destroy(&fixed);
+        return 1;
       }
+      if (iso) {
+        cur_count += 1;
+
+        // early termination: if we have already found at least min_supp
+        // assignments, we can continue with the next pattern node
+        // NOTE: the reported support values will always be equal to min_supp
+        //if (min_supp >= 0 && cur_count >= min_supp) {
+        //  break;
+        //}
+
+        // early pruning: if we have already found more target node assignments for
+        // the current pattern node than for some previous pattern node, the current
+        // pattern node is irrelevant for the support and we can stop trying more
+        // candidates
+        if (cur_supp >= 0 && cur_count >= cur_supp) {
+          //printf("prune\n");
+          break;
+        }
+      }
+    }
+
+    // keep track of current minimum number of target node assignments
+    if (cur_supp < 0 || cur_count < cur_supp) {
+      cur_supp = cur_count;
+    }
+
+    // early termination: the support can only be smaller than or equal to
+    // VECTOR(target_counts)[i].
+    // if that value is already smaller than min_supp, we don't need to continue.
+    if (min_supp >= 0 && cur_supp < min_supp) {
+      //printf("terminate\n");
+      *support = 0;
+      igraph_vector_destroy(&fixed);
+      igraph_matrix_destroy(&automorphic_nodes);
+      return 0;
     }
   }
 
-  //igraph_vector_print(&target_counts);
-  *support = igraph_vector_min(&target_counts);
-  igraph_vector_destroy(&target_counts);
+  *support = cur_supp;
   igraph_vector_destroy(&fixed);
   igraph_matrix_destroy(&automorphic_nodes);
   return 0;
@@ -520,7 +566,8 @@ int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_int_t *pattern_vcolors,
 			  const igraph_vector_int_t *pattern_ecolors,
 			  igraph_bool_t induced,
-			  igraph_integer_t *support) {
+			  igraph_integer_t *support,
+			  igraph_integer_t min_supp) {
   long int i;
   igraph_integer_t gsupp;
   *support = 0;
@@ -530,14 +577,14 @@ int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
 	igraph_mib_support((igraph_t *) VECTOR(*graphs)[i], pattern,
 			   (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
 			   (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
-			   /*induced=*/ 0, &gsupp, 1);
+			   /*induced=*/ 0, &gsupp, min_supp);
 	*support += gsupp;
       }
     } else {
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	igraph_mib_support((igraph_t *) VECTOR(*graphs)[i], pattern,
 			   (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
-			   NULL, NULL, /*induced=*/ 0, &gsupp, 1);
+			   NULL, NULL, /*induced=*/ 0, &gsupp, min_supp);
 	*support += gsupp;
       }
     }
@@ -546,13 +593,13 @@ int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	igraph_mib_support((igraph_t *) VECTOR(*graphs)[i], pattern, NULL, NULL,
 			   (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
-			   /*induced=*/ 0, &gsupp, 1);
+			   /*induced=*/ 0, &gsupp, min_supp);
 	*support += gsupp;
       }
     } else {
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	igraph_mib_support((igraph_t *) VECTOR(*graphs)[i], pattern, NULL, NULL,
-			   NULL, NULL, /*induced=*/ 0, &gsupp, 1);
+			   NULL, NULL, /*induced=*/ 0, &gsupp, min_supp);
 	*support += gsupp;
       }
     }
@@ -568,7 +615,8 @@ int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
 			      const igraph_vector_int_t *pattern_vcolors,
 			      const igraph_vector_int_t *pattern_ecolors,
 			      igraph_bool_t induced,
-			      igraph_integer_t *support) {
+			      igraph_integer_t *support,
+			      igraph_integer_t min_supp) {
   return 0;
 }
 
@@ -1100,7 +1148,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 
   // compute seed support
   db_supp_measure(graphs, vertex_colors, edge_colors, seed_graph,
-		  seed_vcolors, seed_ecolors, /*induced=*/ 0, seed_supp);
+		  seed_vcolors, seed_ecolors, /*induced=*/ 0, seed_supp, min_supp);
   if (*seed_supp < min_supp) {
     // infrequent seed, free memory and prune
     igraph_destroy(seed_graph);

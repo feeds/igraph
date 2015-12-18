@@ -126,7 +126,8 @@ typedef int igraph_db_support_measure_t(const igraph_vector_ptr_t *graphs,
 					const igraph_vector_int_t *pattern_vcolors,
 					const igraph_vector_int_t *pattern_ecolors,
 					igraph_bool_t induced,
-					igraph_integer_t *support);
+					igraph_integer_t *support,
+					igraph_integer_t min_supp);
 
 int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_ptr_t *vertex_colors,
@@ -135,7 +136,8 @@ int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_int_t *pattern_vcolors,
 			  const igraph_vector_int_t *pattern_ecolors,
 			  igraph_bool_t induced,
-			  igraph_integer_t *support);
+			  igraph_integer_t *support,
+			  igraph_integer_t min_supp);
 
 int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
 			      const igraph_vector_ptr_t *vertex_colors,
@@ -144,7 +146,8 @@ int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
 			      const igraph_vector_int_t *pattern_vcolors,
 			      const igraph_vector_int_t *pattern_ecolors,
 			      igraph_bool_t induced,
-			      igraph_integer_t *support);
+			      igraph_integer_t *support,
+			      igraph_integer_t min_supp);
 
 // Mining algorithms
 
