@@ -64,6 +64,10 @@ long int FUNCTION(igraph_llist,size)(TYPE(igraph_llist) *llist) {
   return llist->len;
 }
 
+BASE FUNCTION(igraph_llist,back)(TYPE(igraph_llist) *llist) {
+  return llist->last->data;
+}
+
 int FUNCTION(igraph_llist,to_vector)(TYPE(igraph_llist) *llist, TYPE(igraph_vector) *vector) {
   IGRAPH_CHECK(FUNCTION(igraph_vector,resize)(vector, FUNCTION(igraph_llist,size)(llist)));
   TYPE(igraph_llist_item) *item;

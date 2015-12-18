@@ -27,38 +27,38 @@
 #include "igraph_list.h"
 #include "igraph_memory.h"
 
-//#include <string.h> // memcpy
-//#include "igraph_fsm.h"
-//#include "igraph_matrix.h"
-//#include "igraph_stack.h"
-//#include "igraph_components.h"
-//#include "igraph_constructors.h"
 
-// TODO: right now, it reads all edges into a single graph
 int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
   char buf[32];
-  long int i1, i2, max_vid;
+  long int v1, v2, max_vid, timestamp, last_timestamp;
   char ve;
   igraph_t *graph;
   igraph_llist_int_t add_edges;
-  igraph_llist_int_t del_edges;
+  igraph_llist_ptr_t graph_list;
   igraph_vector_t edges;
 
   IGRAPH_CHECK(igraph_llist_int_init(&add_edges));
-  IGRAPH_CHECK(igraph_llist_int_init(&del_edges));
+  IGRAPH_CHECK(igraph_llist_ptr_init(&graph_list));
+  IGRAPH_CHECK(igraph_vector_init(&edges, 0));
 
   // read vertices
   max_vid = -1;
+  last_timestamp = -1;
   while (fgets(buf, 32, instream)) {
-    sscanf(buf, "%c %ld %ld", &ve, &i1, &i2);
+    if (sscanf(buf, "%c %ld %ld %ld", &ve, &v1, &v2, &timestamp) < 1) {
+      // ignore lines that cannot be parsed
+      continue;
+    }
     if (ve == 'v') {
-      if (i1 > max_vid) {
-	max_vid = i1;
+      if (v1 > max_vid) {
+	max_vid = v1;
       }
     } else if (ve == 'e') {
       // we reached the first edge
-      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i1));
-      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i2));
+      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v1));
+      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v2));
+      last_timestamp = timestamp;
+      break;
     } else {
       // ignore lines not starting with v or e
     }
@@ -66,31 +66,63 @@ int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
 
   // read more edges
   while (fgets(buf, 32, instream)) {
-    sscanf(buf, "%c %ld %ld", &ve, &i1, &i2);
-    if (ve == 'e') {
-      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i1));
-      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i2));
-    } else {
-      // ignore lines not starting with v or e
+    if (sscanf(buf, "%c %ld %ld %ld", &ve, &v1, &v2, &timestamp) < 1) {
+      // ignore lines that cannot be parsed
+      continue;
+
     }
+    if (ve != 'e') {
+      // ignore lines that do not define an edge
+      continue;
+    }
+
+    if (timestamp != last_timestamp) {
+      // we have processed all edges from this timestamp, construct graph
+
+      // initialize new graph from previous one (or empty one, if this is the first timestamp)
+      graph = igraph_Calloc(1, igraph_t);
+      if (igraph_llist_ptr_size(&graph_list) == 0) {
+	IGRAPH_CHECK(igraph_empty(graph, max_vid+1, /*directed=*/ 0));
+      } else {
+	IGRAPH_CHECK(igraph_copy(graph, (igraph_t *) igraph_llist_ptr_back(&graph_list)));
+      }
+
+      // add edges
+      IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
+      IGRAPH_CHECK(igraph_add_edges(graph, &edges, 0));
+
+      // append to graph list
+      IGRAPH_CHECK(igraph_llist_ptr_push_back(&graph_list, graph));
+
+      // destroy old edge list and create new empty ones
+      igraph_llist_int_destroy(&add_edges);
+      IGRAPH_CHECK(igraph_llist_int_init(&add_edges));
+
+      last_timestamp = timestamp;
+    }
+
+    IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v1));
+    IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v2));
   }
 
-  // initialize new graph
+  // process last timestamp
   graph = igraph_Calloc(1, igraph_t);
-  IGRAPH_CHECK(igraph_empty(graph, max_vid+1, 0));
-
-  // add edges
-  IGRAPH_CHECK(igraph_vector_init(&edges, 0));
+  if (igraph_llist_ptr_size(&graph_list) == 0) {
+    IGRAPH_CHECK(igraph_empty(graph, max_vid+1, /*directed=*/ 0));
+  } else {
+    IGRAPH_CHECK(igraph_copy(graph, (igraph_t *) igraph_llist_ptr_back(&graph_list)));
+  }
   IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
   IGRAPH_CHECK(igraph_add_edges(graph, &edges, 0));
-  igraph_vector_destroy(&edges);
+  IGRAPH_CHECK(igraph_llist_ptr_push_back(&graph_list, graph));
 
-  // append to graph list
-  IGRAPH_CHECK(igraph_vector_ptr_resize(graphs, 1));
-  VECTOR(*graphs)[0] = graph;
+  // convert list into vector for output
+  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&graph_list, graphs));
 
   igraph_llist_int_destroy(&add_edges);
-  igraph_llist_int_destroy(&del_edges);
+  igraph_llist_ptr_destroy(&graph_list);
+  igraph_vector_destroy(&edges);
+
   return 0;
 }
 
