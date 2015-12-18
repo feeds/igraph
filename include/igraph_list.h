@@ -34,6 +34,8 @@
 #endif
 
 #include "igraph_types.h"
+#include "igraph_vector.h"
+#include "igraph_vector_ptr.h"
 
 __BEGIN_DECLS
 
@@ -77,9 +79,7 @@ __BEGIN_DECLS
 #include "igraph_pmt_off.h"
 #undef BASE_PTR
 
-// TODO
-//void igraph_llist_ptr_free_all(igraph_llist_ptr_t* s);
-//void igraph_llist_ptr_destroy_all(igraph_llist_ptr_t* s);
+int igraph_llist_int_to_vector_real(igraph_llist_int_t *llist, igraph_vector_t *vector);
 
 __END_DECLS
 

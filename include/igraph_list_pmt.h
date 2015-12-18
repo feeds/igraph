@@ -34,10 +34,12 @@ typedef struct TYPE(igraph_llist_item) {
 typedef struct TYPE(igraph_llist) {
   TYPE(igraph_llist_item) *first;
   TYPE(igraph_llist_item) *last;
+  long int len;
 } TYPE(igraph_llist);
 
 int FUNCTION(igraph_llist,init)(TYPE(igraph_llist) *llist);
 void FUNCTION(igraph_llist,destroy)(TYPE(igraph_llist) *llist);
 int FUNCTION(igraph_llist,push_back)(TYPE(igraph_llist) *llist, BASE data);
-
+long int FUNCTION(igraph_llist,size)(TYPE(igraph_llist) *llist);
+int FUNCTION(igraph_llist,to_vector)(TYPE(igraph_llist) *llist, TYPE(igraph_vector) *vector);
 

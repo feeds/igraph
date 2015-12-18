@@ -20,8 +20,8 @@
 
 */
 
-#ifndef IGRAPH_FSM_H
-#define IGRAPH_FSM_H
+#ifndef IGRAPH_DYNAMIC_H
+#define IGRAPH_DYNAMIC_H
 
 #undef __BEGIN_DECLS
 #undef __END_DECLS

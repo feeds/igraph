@@ -1,4 +1,4 @@
-/* vim:set ts=8 sw=2 sts=2 noet:  */
+/* vim:set ts=8 sw=2 sts=2 noet: */
 /* 
    Linked list datatype
    Copyright (C) 2015  Erik Scharwaechter <erik.scharwaechter@rwth-aachen.de>
@@ -25,6 +25,7 @@
 int FUNCTION(igraph_llist,init)(TYPE(igraph_llist) *llist) {
   llist->first = NULL;
   llist->last = NULL;
+  llist->len = 0;
   return 0;
 }
 
@@ -53,6 +54,22 @@ int FUNCTION(igraph_llist,push_back)(TYPE(igraph_llist) *llist, BASE data) {
   } else {
     llist->last->next = new;
     llist->last = new;
+  }
+  llist->len++;
+
+  return 0;
+}
+
+long int FUNCTION(igraph_llist,size)(TYPE(igraph_llist) *llist) {
+  return llist->len;
+}
+
+int FUNCTION(igraph_llist,to_vector)(TYPE(igraph_llist) *llist, TYPE(igraph_vector) *vector) {
+  IGRAPH_CHECK(FUNCTION(igraph_vector,resize)(vector, FUNCTION(igraph_llist,size)(llist)));
+  TYPE(igraph_llist_item) *item;
+  long int i;
+  for (item = llist->first, i = 0; item != NULL; item = item->next, i++) {
+    VECTOR(*vector)[i] = item->data;
   }
   return 0;
 }
