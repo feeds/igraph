@@ -320,7 +320,7 @@ HEADERS_PUBLIC =../include/igraph.h 		../include/igraph_memory.h    \
 		../include/igraph_matching.h	../include/igraph_embedding.h \
 	        ../include/igraph_scan.h        ../include/igraph_graphlets.h \
 		../include/igraph_vector_type.h ../include/igraph_epidemics.h \
-		../include/igraph_lsap.h
+		../include/igraph_lsap.h ../include/igraph_dynamic.h
 
 SOURCES = 		     basic_query.c games.c cocitation.c iterators.c \
 			     structural_properties.c components.c layout.c \
@@ -336,7 +336,7 @@ SOURCES = 		     basic_query.c games.c cocitation.c iterators.c \
 			     igraph_strvector.c igraph_trie.c matrix.c \
 			     vector.c vector_ptr.c memory.c adjlist.c \
 			     visitors.c igraph_grid.c atlas.c fsm.c topology.c \
-			     motifs.c progress.c operators.c \
+			     motifs.c dynamic.c progress.c operators.c \
 			     igraph_psumtree.c array.c igraph_hashtable.c \
 			     foreign-graphml.c flow.c igraph_buckets.c \
 			     NetDataTypes.cpp NetRoutines.cpp clustertool.cpp \
