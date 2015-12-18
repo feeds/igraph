@@ -55,7 +55,8 @@ void test_motifs() {
 
         igraph_subisomorphic_lad(&pattern, &graph, NULL, NULL, NULL, &maps, /* induced = */ 1, 0);
 
-        igraph_count_subisomorphisms_vf2(&pattern, &pattern, NULL, NULL, NULL, NULL, &nAutomorphisms, NULL, NULL, NULL);
+        igraph_count_subisomorphisms_vf2(&pattern, &pattern, NULL, NULL, NULL, NULL,
+            /* induced = */ 1, &nAutomorphisms, NULL, NULL, NULL);
 
         VECTOR(lad_counts)[i] = igraph_vector_ptr_size(&maps) / nAutomorphisms;
 
@@ -105,7 +106,8 @@ void test_motifs() {
 
         igraph_subisomorphic_lad(&pattern, &graph, NULL, NULL, NULL, &maps, /* induced = */ 1, 0);
 
-        igraph_count_subisomorphisms_vf2(&pattern, &pattern, NULL, NULL, NULL, NULL, &nAutomorphisms, NULL, NULL, NULL);
+        igraph_count_subisomorphisms_vf2(&pattern, &pattern, NULL, NULL, NULL, NULL,
+            /* induced = */ 1, &nAutomorphisms, NULL, NULL, NULL);
 
         VECTOR(lad_counts)[i] = igraph_vector_ptr_size(&maps) / nAutomorphisms;
 
