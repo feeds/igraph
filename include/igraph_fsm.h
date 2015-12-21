@@ -61,11 +61,11 @@ __BEGIN_DECLS
 #endif
 
 #ifndef IN_DEGREE
-# define IN_DEGREE(g, v) ((long int) VECTOR((g).is)[(v)+1]-VECTOR((g).is)[(v)])
+# define IN_DEGREE(g, v) ((long int) (VECTOR((g).is)[(v)+1]-VECTOR((g).is)[(v)]))
 #endif
 
 #ifndef OUT_DEGREE
-# define OUT_DEGREE(g, v) ((long int) VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)])
+# define OUT_DEGREE(g, v) ((long int) (VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]))
 #endif
 
 #ifndef DEGREE

@@ -37,6 +37,7 @@ void FUNCTION(igraph_llist,destroy)(TYPE(igraph_llist) *llist) {
     cur = prev->next;
     igraph_free(prev);
   }
+  llist->len = 0;
 }
 
 int FUNCTION(igraph_llist,push_back)(TYPE(igraph_llist) *llist, BASE data) {
