@@ -80,6 +80,10 @@ __BEGIN_DECLS
 # define OUT_NEIGH_TO_EID(g, v, i) ((long int) VECTOR((g).oi)[(long int) VECTOR((g).os)[(v)] + i])
 #endif
 
+#ifndef NEIGH_TO_EID
+# define NEIGH_TO_EID(g, v, i) (((i) < VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]) ? OUT_NEIGH_TO_EID((g),(v),(i)) : IN_NEIGH_TO_EID((g),(v),((i)-(long int)(VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]))))
+#endif
+
 
 /* -------------------------------------------------- */
 /* Frequent subgraph mining                           */

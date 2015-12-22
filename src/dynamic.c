@@ -27,9 +27,10 @@
 #include "igraph_adjlist.h"
 #include "igraph_list.h"
 #include "igraph_memory.h"
+#include "igraph_structural.h"
 
 
-int igraph_i_compute_dynamic_neighborhood(igraph_t *graph1, igraph_t *graph2,
+int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
       igraph_vector_int_t *changed_nodes, igraph_vector_int_t *neighborhood);
 
 int igraph_i_compute_union_graph_projection(igraph_t *graph1,
@@ -39,7 +40,8 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	  igraph_vector_int_t *neighborhood,
 	  igraph_t *union_graph,
 	  igraph_vector_int_t *union_graph_vcolors,
-	  igraph_vector_int_t *union_graph_ecolors);
+	  igraph_vector_int_t *union_graph_ecolors,
+	  igraph_integer_t max_vcolor, igraph_integer_t max_ecolor);
 
 
 int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
@@ -145,7 +147,7 @@ int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
 // assert: undirected graphs
 //
 // runtime: O(N_seeds*k_max + N_seeds*k_max*log(N_seeds*k_max) + (N_seeds*k_max+N_seeds))
-int igraph_i_compute_dynamic_neighborhood(igraph_t *graph1, igraph_t *graph2,
+int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
       igraph_vector_int_t *seed_nodes, igraph_vector_int_t *neighborhood) {
   igraph_llist_int_t node_list;
   long int i, j, k, changed_count, neigh, neigh_size;
@@ -221,6 +223,13 @@ int igraph_i_compute_dynamic_neighborhood(igraph_t *graph1, igraph_t *graph2,
 }
 
 
+// NOTE: we assume that the (undirected) edges in graph1 and graph2 are stored in exactly
+// the same way, i.e. if the edge (i,j) is stored in the out-neighbors list of i in graph1,
+// it should also be stored in the out-neighbors list of i in graph2 (and not in the
+// in-neighbors of j). If that does not hold, we have two edges connecting i and j in
+// the union graph.
+//
+// assert: ecolors and vcolors must be from the range [1, max_ecolor] or [1, max_vcolor], resp.!
 int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	  igraph_vector_int_t *vcolors1, igraph_vector_int_t *ecolors1,
 	  igraph_t *graph2,
@@ -228,8 +237,127 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	  igraph_vector_int_t *neighborhood,
 	  igraph_t *union_graph,
 	  igraph_vector_int_t *union_graph_vcolors,
-	  igraph_vector_int_t *union_graph_ecolors) {
-  // TODO
+	  igraph_vector_int_t *union_graph_ecolors,
+	  igraph_integer_t max_vcolor,
+	  igraph_integer_t max_ecolor) {
+  long int i, j, k, vcount, eid1, eid2, orig_node;
+  igraph_llist_int_t edge_list, ecolors_list;
+  igraph_vector_int_t bw_index;
+  igraph_vector_t edges;
+
+  igraph_bool_t has_vcolors = ((vcolors1 != NULL) && (vcolors2 != NULL)
+				  && (union_graph_vcolors != NULL));
+  igraph_bool_t has_ecolors = ((ecolors1 != NULL) && (ecolors2 != NULL)
+				  && (union_graph_ecolors != NULL));
+  vcount = igraph_vector_int_size(neighborhood);
+
+  IGRAPH_CHECK(igraph_empty(union_graph, vcount, /*directed=*/ 0));
+  if (has_vcolors) {
+    IGRAPH_CHECK(igraph_vector_int_resize(union_graph_vcolors, vcount));
+  }
+
+  // create backward index for vertex id lookup
+  igraph_vector_int_init(&bw_index, igraph_vcount(graph1));
+  for (i = 0; i < vcount; i++) { // here: new vcount
+    VECTOR(bw_index)[VECTOR(*neighborhood)[i]] = i;
+  }
+
+  IGRAPH_CHECK(igraph_llist_int_init(&edge_list));
+  IGRAPH_CHECK(igraph_llist_int_init(&ecolors_list));
+  for (i = 0; i < vcount; i++) {
+    orig_node = VECTOR(*neighborhood)[i];
+
+    // set new vertex color to the base-(max_vcolor+1) number (vcolor1,vcolor2)
+    if (has_vcolors) {
+      VECTOR(*union_graph_vcolors)[i] = ((max_vcolor+1)*VECTOR(*vcolors1)[orig_node]
+		+ VECTOR(*vcolors2)[orig_node]);
+    }
+
+    // fill edge list with edges from both input graphs
+    j = 0;
+    k = 0;
+    while ((j < OUT_DEGREE(*graph1, orig_node)) || (k < OUT_DEGREE(*graph2, orig_node))) {
+      // if we reached the end of one of the two vectors, fill it with the other
+      if (j == OUT_DEGREE(*graph1, orig_node)) {
+	igraph_llist_int_push_back(&edge_list, i);
+	igraph_llist_int_push_back(&edge_list, VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)]);
+	if (has_ecolors) {
+	  eid2 = OUT_NEIGH_TO_EID(*graph2, orig_node, k);
+	  igraph_llist_int_push_back(&ecolors_list, VECTOR(*ecolors2)[eid2]);
+	} else {
+	  igraph_llist_int_push_back(&ecolors_list, 0b01);
+	}
+	k++;
+	continue;
+      }
+      if (k == OUT_DEGREE(*graph2, orig_node)) {
+	igraph_llist_int_push_back(&edge_list, i);
+	igraph_llist_int_push_back(&edge_list, VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]);
+	if (has_ecolors) {
+	  eid1 = OUT_NEIGH_TO_EID(*graph1, orig_node, j);
+	  igraph_llist_int_push_back(&ecolors_list, (max_ecolor+1)*VECTOR(*ecolors1)[eid1]);
+	} else {
+	  igraph_llist_int_push_back(&ecolors_list, 0b10);
+	}
+	j++;
+	continue;
+      }
+
+      // both vectors are not exhausted yet
+      if (OUT_NEIGHBOR(*graph1, orig_node, j) < OUT_NEIGHBOR(*graph2, orig_node, k)) {
+	igraph_llist_int_push_back(&edge_list, i);
+	igraph_llist_int_push_back(&edge_list, VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]);
+	if (has_ecolors) {
+	  eid1 = OUT_NEIGH_TO_EID(*graph1, orig_node, j);
+	  igraph_llist_int_push_back(&ecolors_list, (max_ecolor+1)*VECTOR(*ecolors1)[eid1]);
+	} else {
+	  igraph_llist_int_push_back(&ecolors_list, 0b10);
+	}
+	j++;
+      } else if (OUT_NEIGHBOR(*graph1, orig_node, j) == OUT_NEIGHBOR(*graph2, orig_node, k)) {
+	igraph_llist_int_push_back(&edge_list, i);
+	igraph_llist_int_push_back(&edge_list, VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]);
+	if (has_ecolors) {
+	  eid1 = OUT_NEIGH_TO_EID(*graph1, orig_node, j);
+	  eid2 = OUT_NEIGH_TO_EID(*graph2, orig_node, k);
+	  igraph_llist_int_push_back(&ecolors_list, (max_ecolor+1)*VECTOR(*ecolors1)[eid1]
+			  + VECTOR(*ecolors2)[eid2]);
+	} else {
+	  igraph_llist_int_push_back(&ecolors_list, 0b11);
+	}
+	j++; k++;
+      } else { // (OUT_NEIGHBOR(*graph1, orig_node, j) > OUT_NEIGHBOR(*graph2, orig_node, k))
+	igraph_llist_int_push_back(&edge_list, i);
+	igraph_llist_int_push_back(&edge_list, VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)]);
+	if (has_ecolors) {
+	  eid2 = OUT_NEIGH_TO_EID(*graph2, orig_node, k);
+	  igraph_llist_int_push_back(&ecolors_list, VECTOR(*ecolors2)[eid2]);
+	} else {
+	  igraph_llist_int_push_back(&ecolors_list, 0b01);
+	}
+	k++;
+      }
+    }
+  }
+
+  // add edges to graph and set edge colors
+  igraph_vector_init(&edges, 0);
+  igraph_llist_int_to_vector_real(&edge_list, &edges);
+  IGRAPH_CHECK(igraph_add_edges(union_graph, &edges, 0));
+  igraph_llist_int_to_vector(&ecolors_list, union_graph_ecolors);
+
+  //printf("edges\n");
+  //igraph_vector_print(&edges);
+  //printf("ecolors\n");
+  //igraph_vector_int_print(union_graph_ecolors);
+  //printf("ug nodes %d edges %d\n", igraph_vcount(union_graph), igraph_ecount(union_graph));
+
+  // clean up
+  igraph_llist_int_destroy(&edge_list);
+  igraph_llist_int_destroy(&ecolors_list);
+  igraph_vector_int_destroy(&bw_index);
+  igraph_vector_destroy(&edges);
+
   return 0;
 }
 
@@ -239,10 +367,11 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 int igraph_compute_dynamic_neighborhoods(igraph_vector_ptr_t *graphs,
       igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
       igraph_vector_ptr_t *result, igraph_vector_ptr_t *result_vcolors,
-      igraph_vector_ptr_t *result_ecolors) {
+      igraph_vector_ptr_t *result_ecolors,
+      igraph_integer_t max_vcolor, igraph_integer_t max_ecolor) {
   long int T = igraph_vector_ptr_size(graphs);
   long int N = igraph_vcount((igraph_t *) VECTOR(*graphs)[0]);
-  long int t, i, j, changed_count;
+  long int t, i, j, eid1, eid2;
   igraph_llist_int_t node_list;
   igraph_llist_ptr_t result_list, result_vcolors_list, result_ecolors_list;
   igraph_vector_int_t changed_nodes, neighborhood;
@@ -282,21 +411,31 @@ int igraph_compute_dynamic_neighborhoods(igraph_vector_ptr_t *graphs,
 	  continue;
 	}
 
-	// TODO: check edge labels, geteid needed?
+	// check edge label
+	if (ecolors != NULL) {
+	  eid1 = NEIGH_TO_EID(*(igraph_t *) VECTOR(*graphs)[t], i, j);
+	  eid2 = NEIGH_TO_EID(*(igraph_t *) VECTOR(*graphs)[t+1], i, j);
+	  if (VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t])[eid1]
+		!= VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t+1])[eid2]) {
+	    igraph_llist_int_push_back(&node_list, i);
+	    continue;
+	  }
+	}
       }
     }
-    changed_count = igraph_llist_int_size(&node_list);
     igraph_llist_int_to_vector(&node_list, &changed_nodes); // sorted by construction
     igraph_llist_int_destroy(&node_list);
 
-    // compute 1-hop neighborhood at timesteps t and t+1
-    igraph_i_compute_dynamic_neighborhood((igraph_t *) VECTOR(*graphs)[t],
+    // compute joint 1-hop neighborhood at timesteps t and t+1
+    igraph_i_compute_joint_neighborhood((igraph_t *) VECTOR(*graphs)[t],
 	  (igraph_t *) VECTOR(*graphs)[t+1], &changed_nodes, &neighborhood);
 
     // compute the union graph projection
     union_graph = igraph_Calloc(1, igraph_t);
     union_graph_vcolors = igraph_Calloc(1, igraph_vector_int_t);
     union_graph_ecolors = igraph_Calloc(1, igraph_vector_int_t);
+    igraph_vector_int_init(union_graph_vcolors, 0);
+    igraph_vector_int_init(union_graph_ecolors, 0);
     if (vcolors != NULL) {
       if (ecolors != NULL) {
 	igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
@@ -305,13 +444,15 @@ int igraph_compute_dynamic_neighborhoods(igraph_vector_ptr_t *graphs,
 	     (igraph_t *) VECTOR(*graphs)[t+1],
 	     (igraph_vector_int_t *) VECTOR(*vcolors)[t+1],
 	     (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
-	     &neighborhood, union_graph, union_graph_vcolors, union_graph_ecolors);
+	     &neighborhood, union_graph, union_graph_vcolors, union_graph_ecolors,
+	     max_vcolor, max_ecolor);
       } else {
 	igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
 	     (igraph_vector_int_t *) VECTOR(*vcolors)[t], NULL,
 	     (igraph_t *) VECTOR(*graphs)[t+1],
 	     (igraph_vector_int_t *) VECTOR(*vcolors)[t+1], NULL,
-	     &neighborhood, union_graph, union_graph_vcolors, union_graph_ecolors);
+	     &neighborhood, union_graph, union_graph_vcolors, union_graph_ecolors,
+	     max_vcolor, max_ecolor);
       }
     } else {
       if (ecolors != NULL) {
@@ -320,20 +461,20 @@ int igraph_compute_dynamic_neighborhoods(igraph_vector_ptr_t *graphs,
 	     (igraph_t *) VECTOR(*graphs)[t+1],
 	     (igraph_vector_int_t *) VECTOR(*vcolors)[t+1],
 	     (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
-	     &neighborhood, union_graph, union_graph_vcolors, union_graph_ecolors);
+	     &neighborhood, union_graph, union_graph_vcolors, union_graph_ecolors,
+	     max_vcolor, max_ecolor);
       } else {
 	igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t], NULL, NULL,
 	     (igraph_t *) VECTOR(*graphs)[t+1], NULL, NULL,
-	     &neighborhood, union_graph, union_graph_vcolors, union_graph_ecolors);
+	     &neighborhood, union_graph, union_graph_vcolors, union_graph_ecolors,
+	     max_vcolor, max_ecolor);
       }
     }
 
+    //printf("ug %ld: vcount %d ecount %d\n", t, igraph_vcount(union_graph), igraph_ecount(union_graph));
     igraph_llist_ptr_push_back(&result_list, union_graph);
     igraph_llist_ptr_push_back(&result_vcolors_list, union_graph_vcolors);
     igraph_llist_ptr_push_back(&result_ecolors_list, union_graph_ecolors);
-
-    printf("timestep %ld: %ld changed, %ld neighs\n", t, changed_count,
-		igraph_vector_int_size(&neighborhood));
   } // for t = 1...T
 
   // return result
