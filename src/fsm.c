@@ -21,8 +21,11 @@
 */
 
 /*
- * TODO:
- * - replace manual linked list iterations by iteration functions
+ * TECHNICAL TODO:
+ * - Better use vertex/edge selectors and iterators. Problem: igraph_vit_create() with
+ *   igraph_vs_adj() as selector uses the inefficient igraph_neighbors() function, and
+ *   with igraph_vs_vector() performs an O(N) check for invalid vertex ids in the vector.
+ * - Replace manual linked list iterations by iteration functions
  */
 
 #include <stdlib.h>
@@ -176,7 +179,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     VECTOR(node_ordering)[i] = pattern_node;
     VECTOR(pred_idx)[i] = pred;
 
-    // add neighbors to stack, in the order specified by RI's scoring functions
+    // add neighbors to stack, TODO: in the order specified by RI's scoring functions
     for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
       if (VECTOR(visited)[NEIGHBOR(*graph2, pattern_node, j)] == 1)
         continue;
