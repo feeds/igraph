@@ -38,25 +38,20 @@
 
 __BEGIN_DECLS
 
+typedef enum igraph_projection_t {
+  IGRAPH_PROJECTION_FULL,
+  IGRAPH_PROJECTION_NEIGHBORS,
+  IGRAPH_PROJECTION_EVENT
+} igraph_projection_t;
+
 int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream);
 
-int igraph_compute_full_union_graph_projection(igraph_vector_ptr_t *graphs,
+int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
       igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+      igraph_projection_t proj_type,
       igraph_vector_ptr_t *result, igraph_vector_ptr_t *result_vcolors,
       igraph_vector_ptr_t *result_ecolors,
       igraph_integer_t max_vcolor, igraph_integer_t max_ecolor);
-
-int igraph_compute_dynamic_neighborhoods(igraph_vector_ptr_t *graphs,
-      igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
-      igraph_vector_ptr_t *result, igraph_vector_ptr_t *result_vcolors,
-      igraph_vector_ptr_t *result_ecolors, igraph_integer_t max_vcolor,
-      igraph_integer_t max_ecolor);
-
-int igraph_compute_event_neighborhoods(igraph_vector_ptr_t *graphs,
-      igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
-      igraph_vector_ptr_t *result, igraph_vector_ptr_t *result_vcolors,
-      igraph_vector_ptr_t *result_ecolors, igraph_integer_t max_vcolor,
-      igraph_integer_t max_ecolor);
 
 __END_DECLS
 
