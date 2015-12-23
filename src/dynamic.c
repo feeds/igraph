@@ -478,9 +478,16 @@ int igraph_compute_dynamic_neighborhoods(igraph_vector_ptr_t *graphs,
   } // for t = 1...T
 
   // return result
-  igraph_llist_ptr_to_vector(&result_list, result);
-  igraph_llist_ptr_to_vector(&result_vcolors_list, result_vcolors);
-  igraph_llist_ptr_to_vector(&result_ecolors_list, result_ecolors);
+  // TODO: free memory if ptrs == NULL
+  if (result != NULL) {
+    igraph_llist_ptr_to_vector(&result_list, result);
+  }
+  if (result_vcolors != NULL) {
+    igraph_llist_ptr_to_vector(&result_vcolors_list, result_vcolors);
+  }
+  if (result_ecolors != NULL) {
+    igraph_llist_ptr_to_vector(&result_ecolors_list, result_ecolors);
+  }
 
   // clean up
   igraph_vector_int_destroy(&changed_nodes);
