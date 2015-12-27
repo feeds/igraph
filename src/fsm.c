@@ -179,7 +179,9 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     VECTOR(node_ordering)[i] = pattern_node;
     VECTOR(pred_idx)[i] = pred;
 
-    // add neighbors to stack, TODO: in the order specified by RI's scoring functions
+    // add neighbors to stack
+    // TODO: in the order specified by RI's scoring functions
+    // TODO: low frequency edge labels (in target graph) as early as possible
     for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
       if (VECTOR(visited)[NEIGHBOR(*graph2, pattern_node, j)] == 1)
         continue;
@@ -294,13 +296,14 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       }
 
       // check edges to already matched nodes
+      // TODO: we might be able to speed this up with NEIGH_TO_EID or the like
       for (i = 0; success && i < partial_solution_pos; i++) {
 	other_pattern_node = VECTOR(node_ordering)[i];
 	other_target_node = VECTOR(state_target_node)[i];
 
-	igraph_get_eid(graph1, &eid1, other_target_node, target_node, 1, 0);
 	igraph_get_eid(graph2, &eid2, other_pattern_node, pattern_node, 1, 0);
 	if (eid2 > -1) {
+	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, 1, 0);
 	  if (eid1 == -1) {
 	    success = 0;
 	  } else {
@@ -309,16 +312,17 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	      success = 0;
 	    }
 	  }
-	} else {
-	  if (induced && eid1 > -1) {
+	} else if (induced) {
+	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, 1, 0);
+	  if (eid1 > -1) {
 	    success = 0;
 	  }
 	}
 
 	if (directed) {
-	  igraph_get_eid(graph1, &eid1, target_node, other_target_node, 1, 0);
 	  igraph_get_eid(graph2, &eid2, pattern_node, other_pattern_node, 1, 0);
 	  if (eid2 > -1) {
+	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, 1, 0);
 	    if (eid1 == -1) {
 	      success = 0;
 	    } else {
@@ -327,8 +331,9 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 		success = 0;
 	      }
 	    }
-	  } else {
-	    if (induced && eid1 > -1) {
+	  } else if (induced) {
+	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, 1, 0);
+	    if (eid1 > -1) {
 	      success = 0;
 	    }
 	  }
