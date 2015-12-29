@@ -1305,8 +1305,8 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   }
 
   // keep only frequent colors
-  igraph_vector_int_init(&freq_vcolors, max_vcolor+1);
-  igraph_vector_int_init(&freq_ecolors, max_ecolor+1);
+  igraph_vector_int_init(&freq_vcolors, max_vcolor+2);
+  igraph_vector_int_init(&freq_ecolors, max_ecolor+2);
   igraph_vector_int_fill(&freq_vcolors, -1);
   igraph_vector_int_fill(&freq_ecolors, -1);
   if (vertex_colors != NULL) {
