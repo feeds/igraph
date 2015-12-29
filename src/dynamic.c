@@ -44,11 +44,23 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	  igraph_integer_t max_vcolor, igraph_integer_t max_ecolor);
 
 
+// input file should be in the format:
+//    v $vid [...]
+//    e $vid1 $vid2 $creation [$deletion [...]]
+// where -1 for $deletion means that the edge is never deleted and [...] is ignored. Edges
+// must be sorted by $creation. Node ids start with 0. Example:
+//    v 0
+//    v 1
+//    ...
+//    e 0 3 0 -1
+//    e 1 41 0 3
+//    e 1 8 1 -1
+//    ...
 int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
   char buf[32];
   long int v1, v2, max_vid, timestamp, last_timestamp;
   char ve;
-  igraph_t *graph;
+  igraph_t *graph, *graph_copy;
   igraph_llist_int_t add_edges;
   igraph_llist_ptr_t graph_list;
   igraph_vector_t edges;
@@ -92,7 +104,7 @@ int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
       continue;
     }
 
-    if (timestamp != last_timestamp) {
+    if (timestamp > last_timestamp) {
       // we have processed all edges from this timestamp, construct graph
 
       // initialize new graph from previous one (or empty one, if this is the first timestamp)
@@ -103,7 +115,16 @@ int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
 	IGRAPH_CHECK(igraph_copy(graph, (igraph_t *) igraph_llist_ptr_back(&graph_list)));
       }
 
-      // add edges
+      // if current and the last timestamp are not consecutive, add copies
+      // of the current graph to the list to fill the gap
+      while (last_timestamp < timestamp-1) {
+	graph_copy = igraph_Calloc(1, igraph_t);
+	IGRAPH_CHECK(igraph_copy(graph_copy, graph));
+	IGRAPH_CHECK(igraph_llist_ptr_push_back(&graph_list, graph_copy));
+	last_timestamp++;
+      }
+
+      // add edges to the current graph
       IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
       IGRAPH_CHECK(igraph_add_edges(graph, &edges, 0));
 
@@ -115,6 +136,9 @@ int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
       IGRAPH_CHECK(igraph_llist_int_init(&add_edges));
 
       last_timestamp = timestamp;
+    } else if (timestamp < last_timestamp) {
+      IGRAPH_ERROR("edges not sorted by timestamp", IGRAPH_PARSEERROR);
+      return 1;
     }
 
     IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v1));
@@ -128,12 +152,20 @@ int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
   } else {
     IGRAPH_CHECK(igraph_copy(graph, (igraph_t *) igraph_llist_ptr_back(&graph_list)));
   }
+  while (last_timestamp < timestamp-1) {
+    graph_copy = igraph_Calloc(1, igraph_t);
+    IGRAPH_CHECK(igraph_copy(graph_copy, graph));
+    IGRAPH_CHECK(igraph_llist_ptr_push_back(&graph_list, graph_copy));
+    last_timestamp++;
+  }
   IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
   IGRAPH_CHECK(igraph_add_edges(graph, &edges, 0));
   IGRAPH_CHECK(igraph_llist_ptr_push_back(&graph_list, graph));
 
   // convert list into vector for output
   IGRAPH_CHECK(igraph_llist_ptr_to_vector(&graph_list, graphs));
+
+  // TODO: process deleted edges
 
   igraph_llist_int_destroy(&add_edges);
   igraph_llist_ptr_destroy(&graph_list);
