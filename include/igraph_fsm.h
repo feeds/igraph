@@ -41,11 +41,6 @@
 __BEGIN_DECLS
 
 
-// maximum node/edge color that can appear in the graph database, needed to allocate enough memory
-// TODO: should be removed in the future
-#define MAX_COLOR 25
-
-
 // O(1) access to in- and out-neighbors and degrees
 
 #ifndef OUT_NEIGHBOR
