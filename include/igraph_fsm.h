@@ -41,6 +41,11 @@
 __BEGIN_DECLS
 
 
+typedef enum igraph_gspan_variant_t {
+  IGRAPH_GSPAN_DEFAULT,
+  IGRAPH_GSPAN_GERM
+} igraph_gspan_variant_t;
+
 // O(1) access to in- and out-neighbors and degrees
 
 #ifndef OUT_NEIGHBOR
@@ -103,6 +108,7 @@ int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_vector_int_t *edge_color1,
 		       const igraph_vector_int_t *edge_color2,
 		       igraph_bool_t induced,
+		       igraph_gspan_variant_t variant,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp);
 
@@ -125,6 +131,7 @@ typedef int igraph_db_support_measure_t(const igraph_vector_ptr_t *graphs,
 					const igraph_vector_int_t *pattern_vcolors,
 					const igraph_vector_int_t *pattern_ecolors,
 					igraph_bool_t induced,
+					igraph_gspan_variant_t variant,
 					igraph_integer_t *support,
 					igraph_integer_t min_supp);
 
@@ -135,6 +142,7 @@ int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_int_t *pattern_vcolors,
 			  const igraph_vector_int_t *pattern_ecolors,
 			  igraph_bool_t induced,
+			  igraph_gspan_variant_t variant,
 			  igraph_integer_t *support,
 			  igraph_integer_t min_supp);
 
@@ -153,6 +161,7 @@ int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
 int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
 		const igraph_vector_ptr_t *edge_colors, igraph_db_support_measure_t *supp_measure,
 		igraph_integer_t min_supp, igraph_integer_t max_edges,
+		igraph_gspan_variant_t variant,
 		igraph_vector_ptr_t *frequent_subgraphs,
 		igraph_vector_ptr_t *frequent_subgraph_vcolors,
 		igraph_vector_ptr_t *frequent_subgraph_ecolors,
