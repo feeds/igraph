@@ -175,6 +175,7 @@ int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
 }
 
 
+// assert: seed_nodes is sorted ascendingly
 // assert: all nodes from seed_nodes appear in graph1 and graph2
 // assert: undirected graphs
 //
@@ -411,6 +412,201 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 }
 
 
+// node_selectors points to a length T-1 igraph_vector_ptr object that contains for each
+// timestep an igraph_llist_ptr_t object with a list of node selectors (igraph_vs_t *)
+int igraph_i_compute_dynamic_node_selectors_full(long int T, igraph_vector_ptr_t *node_selectors) {
+  long int t;
+  igraph_vs_t *node_selector;
+  IGRAPH_CHECK(igraph_vector_ptr_resize(node_selectors, T-1));
+  for (t = 0; t < T-1; t++) {
+    VECTOR(*node_selectors)[t] = igraph_Calloc(1, igraph_llist_ptr_t);
+    IGRAPH_CHECK(igraph_llist_ptr_init((igraph_llist_ptr_t *) VECTOR(*node_selectors)[t]));
+    node_selector = igraph_Calloc(1, igraph_vs_t);
+    IGRAPH_CHECK(igraph_vs_all(node_selector));
+    IGRAPH_CHECK(igraph_llist_ptr_push_back((igraph_llist_ptr_t *) VECTOR(*node_selectors)[t],
+		  node_selector));
+  }
+  return 0;
+}
+
+
+int igraph_i_compute_dynamic_node_selectors_neighbors(igraph_vector_ptr_t *graphs,
+      igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+      igraph_vector_ptr_t *node_selectors) {
+  igraph_llist_int_t node_list;
+  igraph_vector_t changed_nodes, neighborhood;
+  igraph_vs_t *node_selector;
+  long int t, i, j, eid1, eid2;
+  long int N = igraph_vcount((igraph_t *) VECTOR(*graphs)[0]);
+  long int T = igraph_vector_ptr_size(graphs);
+
+  IGRAPH_CHECK(igraph_vector_init(&changed_nodes, 0));
+  IGRAPH_CHECK(igraph_vector_init(&neighborhood, 0));
+
+  // iterate over all timestamps and collect all changed nodes
+  IGRAPH_CHECK(igraph_vector_ptr_resize(node_selectors, T-1));
+  for (t = 0; t < T-1; t++) {
+    igraph_llist_int_init(&node_list);
+    for (i = 0; i < N; i++) {
+      // check if node color has changed
+      if ((vcolors != NULL) && (VECTOR(*(igraph_vector_int_t *) VECTOR(*vcolors)[t])[i]
+            != VECTOR(*(igraph_vector_int_t *) VECTOR(*vcolors)[t+1])[i])) {
+        igraph_llist_int_push_back(&node_list, i);
+        continue;
+      }
+
+      // check if node degree has changed
+      if (DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i)
+            != DEGREE(*(igraph_t *) VECTOR(*graphs)[t+1], i)) {
+        igraph_llist_int_push_back(&node_list, i);
+        continue;
+      }
+
+      // check if incident edges have changed
+      for (j = 0; j < DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i); j++) {
+        if (NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t], i, j)
+	!= NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t+1], i, j)) {
+          igraph_llist_int_push_back(&node_list, i);
+          break;
+        }
+
+        // check edge label
+        if (ecolors != NULL) {
+          eid1 = NEIGH_TO_EID(*(igraph_t *) VECTOR(*graphs)[t], i, j);
+          eid2 = NEIGH_TO_EID(*(igraph_t *) VECTOR(*graphs)[t+1], i, j);
+          if (VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t])[eid1]
+	  != VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t+1])[eid2]) {
+            igraph_llist_int_push_back(&node_list, i);
+            break;
+          }
+        }
+      }
+    }
+    igraph_llist_int_to_vector_real(&node_list, &changed_nodes); // sorted by construction
+    igraph_llist_int_destroy(&node_list);
+
+    // compute joint 1-hop neighborhood at timesteps t and t+1
+    igraph_i_compute_joint_neighborhood((igraph_t *) VECTOR(*graphs)[t],
+          (igraph_t *) VECTOR(*graphs)[t+1], &changed_nodes, &neighborhood);
+
+    // create node selector list for this timestep
+    VECTOR(*node_selectors)[t] = igraph_Calloc(1, igraph_llist_ptr_t);
+    IGRAPH_CHECK(igraph_llist_ptr_init((igraph_llist_ptr_t *) VECTOR(*node_selectors)[t]));
+    node_selector = igraph_Calloc(1, igraph_vs_t);
+    IGRAPH_CHECK(igraph_vs_vector_copy(node_selector, &neighborhood));
+    igraph_llist_ptr_push_back((igraph_llist_ptr_t *) VECTOR(*node_selectors)[t], node_selector);
+  }
+
+  igraph_vector_destroy(&changed_nodes);
+  igraph_vector_destroy(&neighborhood);
+
+  return 0;
+}
+
+int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
+      igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+      igraph_vector_ptr_t *node_selectors) {
+  igraph_vector_t node_event, edge_event, neighborhood;
+  igraph_vs_t *node_selector;
+  long int t, i, j, k, nei1, nei2, eid1, eid2;
+  long int N = igraph_vcount((igraph_t *) VECTOR(*graphs)[0]);
+  long int T = igraph_vector_ptr_size(graphs);
+  igraph_bool_t new_event;
+
+  IGRAPH_CHECK(igraph_vector_init(&node_event, 1));
+  IGRAPH_CHECK(igraph_vector_init(&edge_event, 2));
+  IGRAPH_CHECK(igraph_vector_init(&neighborhood, 0));
+
+  // iterate over all timestamps and collect node and edge events
+  IGRAPH_CHECK(igraph_vector_ptr_resize(node_selectors, T-1));
+  for (t = 0; t < T-1; t++) {
+    VECTOR(*node_selectors)[t] = igraph_Calloc(1, igraph_llist_ptr_t);
+    IGRAPH_CHECK(igraph_llist_ptr_init((igraph_llist_ptr_t *) VECTOR(*node_selectors)[t]));
+
+    for (i = 0; i < N; i++) {
+      // check for node event
+      if ((vcolors != NULL) && (VECTOR(*(igraph_vector_int_t *) VECTOR(*vcolors)[t])[i]
+            != VECTOR(*(igraph_vector_int_t *) VECTOR(*vcolors)[t+1])[i])) {
+	VECTOR(node_event)[0] = i;
+	igraph_i_compute_joint_neighborhood((igraph_t *) VECTOR(*graphs)[t],
+		  (igraph_t *) VECTOR(*graphs)[t+1], &node_event, &neighborhood);
+	node_selector = igraph_Calloc(1, igraph_vs_t);
+	IGRAPH_CHECK(igraph_vs_vector_copy(node_selector, &neighborhood));
+	igraph_llist_ptr_push_back((igraph_llist_ptr_t *) VECTOR(*node_selectors)[t], node_selector);
+      }
+
+      // check for edge events, i.e. check which incident edges have changed
+      j = 0; // neighbor index at timestep t
+      k = 0; // neighbor index at timestep t+1
+      VECTOR(edge_event)[0] = i;
+      while ((j < DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i)) ||
+		  (k < DEGREE(*(igraph_t *) VECTOR(*graphs)[t+1], i))) {
+	nei1 = NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t], i, j);
+	nei2 = NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t+1], i, k);
+	new_event = 0;
+
+	if (j == DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i)) {
+	  // neighbors at timestep t exhausted, all remaining neighbors at time t+1
+	  // make edge insertion events
+	  VECTOR(edge_event)[1] = nei2;
+	  new_event = 1;
+	  k++;
+	} else if (k == DEGREE(*(igraph_t *) VECTOR(*graphs)[t+1], i)) {
+	  // neighbors at timestep t+1 exhausted, all remaining neighbors at time t
+	  // make edge deletion events
+	  VECTOR(edge_event)[1] = nei1;
+	  new_event = 1;
+	  j++;
+	} else {
+	  // neighbors remaining at both timesteps
+          if (nei1 < nei2) {
+	    // edge event: link to nei1 has been removed
+	    VECTOR(edge_event)[1] = nei1;
+	    new_event = 1;
+	    j++;
+          } else if (nei1 == nei2) {
+	    // neighbors are equal, check the edge label
+            if (ecolors != NULL) {
+              eid1 = NEIGH_TO_EID(*(igraph_t *) VECTOR(*graphs)[t], i, j);
+              eid2 = NEIGH_TO_EID(*(igraph_t *) VECTOR(*graphs)[t+1], i, k);
+              if (VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t])[eid1]
+		    != VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t+1])[eid2]) {
+		// edge event: link to nei1/nei2 has been relabelled
+		VECTOR(edge_event)[1] = nei1;
+		new_event = 1;
+              }
+            }
+	    j++;
+	    k++;
+	  } else if (nei1 > nei2) {
+	    // edge event: link to nei2 has been added
+	    VECTOR(edge_event)[1] = nei2;
+	    new_event = 1;
+	    k++;
+	  }
+	}
+
+	// create node selector for edge event
+	if (new_event) {
+	  igraph_i_compute_joint_neighborhood((igraph_t *) VECTOR(*graphs)[t],
+		    (igraph_t *) VECTOR(*graphs)[t+1], &edge_event, &neighborhood);
+	  node_selector = igraph_Calloc(1, igraph_vs_t);
+	  IGRAPH_CHECK(igraph_vs_vector_copy(node_selector, &neighborhood));
+	  igraph_llist_ptr_push_back((igraph_llist_ptr_t *) VECTOR(*node_selectors)[t],
+				      node_selector);
+	  new_event = 0;
+	}
+      } // loop over all neighbors of i at timesteps t and t+1
+    } // for all nodes i
+  } // for all timesteps t
+
+  igraph_vector_destroy(&node_event);
+  igraph_vector_destroy(&edge_event);
+  igraph_vector_destroy(&neighborhood);
+
+  return 0;
+}
+
 // assert: all graphs have the same number of nodes, and node IDs correspond with each other
 // assert: undirected graph
 int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
@@ -420,126 +616,92 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
       igraph_vector_ptr_t *result_ecolors,
       igraph_integer_t max_vcolor, igraph_integer_t max_ecolor) {
   long int T = igraph_vector_ptr_size(graphs);
-  long int N = igraph_vcount((igraph_t *) VECTOR(*graphs)[0]);
-  long int t, i, j, eid1, eid2;
-  igraph_llist_int_t node_list;
+  long int t;
   igraph_llist_ptr_t result_list, result_vcolors_list, result_ecolors_list;
-  igraph_vector_t changed_nodes, neighborhood;
   igraph_t *union_graph;
   igraph_vector_int_t *union_graph_vcolors, *union_graph_ecolors;
-  igraph_vs_t node_selector;
+  igraph_vs_t *node_selector;
+  igraph_vector_ptr_t node_selectors;
+  igraph_llist_ptr_t *node_selector_list;
+  igraph_llist_item_ptr_t *item_ptr;
 
-  if (proj_type == IGRAPH_PROJECTION_NEIGHBORS) {
-    igraph_vector_init(&changed_nodes, 0);
-    igraph_vector_init(&neighborhood, 0);
-  }
   igraph_llist_ptr_init(&result_list);
   igraph_llist_ptr_init(&result_vcolors_list);
   igraph_llist_ptr_init(&result_ecolors_list);
+  igraph_vector_ptr_init(&node_selectors, 0);
 
-  // iterate over all timestamps
-  for (t = 0; t < T-1; t++) {
-    switch (proj_type) {
-    case IGRAPH_PROJECTION_FULL:
-      IGRAPH_CHECK(igraph_vs_all(&node_selector));
-      break;
+  // depending on the projection type, compute the node selectors for all timesteps
+  switch (proj_type) {
     case IGRAPH_PROJECTION_EVENT:
-      /* not implemented */
-      return 1;
-    case IGRAPH_PROJECTION_NEIGHBORS:
-      // determine the nodes that have changed between the current and the next timestep
-      igraph_llist_int_init(&node_list);
-      for (i = 0; i < N; i++) {
-	// check if node color has changed
-	if ((vcolors != NULL) && (VECTOR(*(igraph_vector_int_t *) VECTOR(*vcolors)[t])[i]
-	      != VECTOR(*(igraph_vector_int_t *) VECTOR(*vcolors)[t+1])[i])) {
-	  igraph_llist_int_push_back(&node_list, i);
-	  continue;
-	}
-
-	// check if node degree has changed
-	if (DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i)
-	      != DEGREE(*(igraph_t *) VECTOR(*graphs)[t+1], i)) {
-	  igraph_llist_int_push_back(&node_list, i);
-	  continue;
-	}
-
-	// check if incident edges have changed
-	for (j = 0; j < DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i); j++) {
-	  if (NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t], i, j)
-		!= NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t+1], i, j)) {
-	    igraph_llist_int_push_back(&node_list, i);
-	    break;
-	  }
-
-	  // check edge label
-	  if (ecolors != NULL) {
-	    eid1 = NEIGH_TO_EID(*(igraph_t *) VECTOR(*graphs)[t], i, j);
-	    eid2 = NEIGH_TO_EID(*(igraph_t *) VECTOR(*graphs)[t+1], i, j);
-	    if (VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t])[eid1]
-		  != VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t+1])[eid2]) {
-	      igraph_llist_int_push_back(&node_list, i);
-	      break;
-	    }
-	  }
-	}
-      }
-      igraph_llist_int_to_vector_real(&node_list, &changed_nodes); // sorted by construction
-      igraph_llist_int_destroy(&node_list);
-
-      // compute joint 1-hop neighborhood at timesteps t and t+1
-      igraph_i_compute_joint_neighborhood((igraph_t *) VECTOR(*graphs)[t],
-	    (igraph_t *) VECTOR(*graphs)[t+1], &changed_nodes, &neighborhood);
-
-      IGRAPH_CHECK(igraph_vs_vector(&node_selector, &neighborhood));
+      IGRAPH_CHECK(igraph_i_compute_dynamic_node_selectors_event(graphs,
+					      vcolors, ecolors, &node_selectors));
       break;
-    } // switch (proj_type)
+    case IGRAPH_PROJECTION_NEIGHBORS:
+      IGRAPH_CHECK(igraph_i_compute_dynamic_node_selectors_neighbors(graphs,
+					      vcolors, ecolors, &node_selectors));
+      break;
+    case IGRAPH_PROJECTION_FULL:
+    default:
+      IGRAPH_CHECK(igraph_i_compute_dynamic_node_selectors_full(T, &node_selectors));
+      break;
+  }
 
-    // compute the union graph projection
-    union_graph = igraph_Calloc(1, igraph_t);
-    union_graph_vcolors = igraph_Calloc(1, igraph_vector_int_t);
-    union_graph_ecolors = igraph_Calloc(1, igraph_vector_int_t);
-    igraph_vector_int_init(union_graph_vcolors, 0);
-    igraph_vector_int_init(union_graph_ecolors, 0);
-    if (vcolors != NULL) {
-      if (ecolors != NULL) {
-	igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
-	     (igraph_vector_int_t *) VECTOR(*vcolors)[t],
-	     (igraph_vector_int_t *) VECTOR(*ecolors)[t],
-	     (igraph_t *) VECTOR(*graphs)[t+1],
-	     (igraph_vector_int_t *) VECTOR(*vcolors)[t+1],
-	     (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
-	     node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
-	     max_vcolor, max_ecolor);
+  // compute the union graph projection for all node selectors at each timestep
+  for (t = 0; t < T-1; t++) {
+    node_selector_list = (igraph_llist_ptr_t *) VECTOR(node_selectors)[t];
+    for (item_ptr = node_selector_list->first; item_ptr != NULL; item_ptr = item_ptr->next) {
+      node_selector = (igraph_vs_t *) item_ptr->data;
+      union_graph = igraph_Calloc(1, igraph_t);
+      union_graph_vcolors = igraph_Calloc(1, igraph_vector_int_t);
+      union_graph_ecolors = igraph_Calloc(1, igraph_vector_int_t);
+      igraph_vector_int_init(union_graph_vcolors, 0);
+      igraph_vector_int_init(union_graph_ecolors, 0);
+      if (vcolors != NULL) {
+	if (ecolors != NULL) {
+	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t],
+	       (igraph_vector_int_t *) VECTOR(*ecolors)[t],
+	       (igraph_t *) VECTOR(*graphs)[t+1],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t+1],
+	       (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
+	       *node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
+	       max_vcolor, max_ecolor);
+	} else {
+	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t], NULL,
+	       (igraph_t *) VECTOR(*graphs)[t+1],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t+1], NULL,
+	       *node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
+	       max_vcolor, max_ecolor);
+	}
       } else {
-	igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
-	     (igraph_vector_int_t *) VECTOR(*vcolors)[t], NULL,
-	     (igraph_t *) VECTOR(*graphs)[t+1],
-	     (igraph_vector_int_t *) VECTOR(*vcolors)[t+1], NULL,
-	     node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
-	     max_vcolor, max_ecolor);
+	if (ecolors != NULL) {
+	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
+	       NULL, (igraph_vector_int_t *) VECTOR(*ecolors)[t],
+	       (igraph_t *) VECTOR(*graphs)[t+1],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t+1],
+	       (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
+	       *node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
+	       max_vcolor, max_ecolor);
+	} else {
+	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t], NULL, NULL,
+	       (igraph_t *) VECTOR(*graphs)[t+1], NULL, NULL,
+	       *node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
+	       max_vcolor, max_ecolor);
+	}
       }
-    } else {
-      if (ecolors != NULL) {
-	igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
-	     NULL, (igraph_vector_int_t *) VECTOR(*ecolors)[t],
-	     (igraph_t *) VECTOR(*graphs)[t+1],
-	     (igraph_vector_int_t *) VECTOR(*vcolors)[t+1],
-	     (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
-	     node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
-	     max_vcolor, max_ecolor);
-      } else {
-	igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t], NULL, NULL,
-	     (igraph_t *) VECTOR(*graphs)[t+1], NULL, NULL,
-	     node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
-	     max_vcolor, max_ecolor);
-      }
-    }
 
-    //printf("ug %ld: vcount %d ecount %d\n", t, igraph_vcount(union_graph), igraph_ecount(union_graph));
-    igraph_llist_ptr_push_back(&result_list, union_graph);
-    igraph_llist_ptr_push_back(&result_vcolors_list, union_graph_vcolors);
-    igraph_llist_ptr_push_back(&result_ecolors_list, union_graph_ecolors);
+      //printf("ug %ld: vcount %d ecount %d\n", t, igraph_vcount(union_graph), igraph_ecount(union_graph));
+      igraph_llist_ptr_push_back(&result_list, union_graph);
+      igraph_llist_ptr_push_back(&result_vcolors_list, union_graph_vcolors);
+      igraph_llist_ptr_push_back(&result_ecolors_list, union_graph_ecolors);
+
+      igraph_vs_destroy(node_selector);
+      igraph_free(node_selector);
+    } // for all node selectors at timestep t
+
+    igraph_llist_ptr_destroy(node_selector_list);
+    igraph_free(node_selector_list);
   } // for t = 1...T
 
   // return result
@@ -555,10 +717,7 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
   }
 
   // clean up
-  if (proj_type == IGRAPH_PROJECTION_NEIGHBORS) {
-    igraph_vector_destroy(&changed_nodes);
-    igraph_vector_destroy(&neighborhood);
-  }
+  igraph_vector_ptr_destroy(&node_selectors);
   igraph_llist_ptr_destroy(&result_list);
   igraph_llist_ptr_destroy(&result_vcolors_list);
   igraph_llist_ptr_destroy(&result_ecolors_list);
