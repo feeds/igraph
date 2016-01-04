@@ -617,14 +617,14 @@ int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
 	igraph_mib_support((igraph_t *) VECTOR(*graphs)[i], pattern,
 			   (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
 			   (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
-			   /*induced=*/ 0, variant, &gsupp, min_supp);
+			   /*induced=*/ 0, variant, &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     } else {
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	igraph_mib_support((igraph_t *) VECTOR(*graphs)[i], pattern,
 			   (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
-			   NULL, NULL, /*induced=*/ 0, variant, &gsupp, min_supp);
+			   NULL, NULL, /*induced=*/ 0, variant, &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     }
@@ -633,13 +633,13 @@ int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	igraph_mib_support((igraph_t *) VECTOR(*graphs)[i], pattern, NULL, NULL,
 			   (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
-			   /*induced=*/ 0, variant, &gsupp, min_supp);
+			   /*induced=*/ 0, variant, &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     } else {
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	igraph_mib_support((igraph_t *) VECTOR(*graphs)[i], pattern, NULL, NULL,
-			   NULL, NULL, /*induced=*/ 0, variant, &gsupp, min_supp);
+			   NULL, NULL, /*induced=*/ 0, variant, &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     }
