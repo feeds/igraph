@@ -33,6 +33,14 @@
 int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
       igraph_vector_t *changed_nodes, igraph_vector_t *neighborhood);
 
+int igraph_i_compute_dynamic_node_selectors_full(long int T, igraph_vector_ptr_t *node_selectors);
+int igraph_i_compute_dynamic_node_selectors_neighbors(igraph_vector_ptr_t *graphs,
+      igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+      igraph_vector_ptr_t *node_selectors);
+int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
+      igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+      igraph_vector_ptr_t *node_selectors);
+
 int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	  igraph_vector_int_t *vcolors1, igraph_vector_int_t *ecolors1,
 	  igraph_t *graph2,
@@ -183,7 +191,7 @@ int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream) {
 int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
       igraph_vector_t *seed_nodes, igraph_vector_t *neighborhood) {
   igraph_llist_t node_list;
-  long int i, j, k, changed_count, neigh, neigh_size;
+  long int i, j, k, changed_count, neigh, neigh_size, node;
   igraph_vector_t neighborhood_dups;
 
   changed_count = igraph_vector_size(seed_nodes);
@@ -192,28 +200,29 @@ int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
   igraph_vector_init(&neighborhood_dups, 0);
 
   for (i = 0; i < changed_count; i++) {
+    node = VECTOR(*seed_nodes)[i];
     // collect neighbors in graph1
-    for (j = 0; j < DEGREE(*graph1, i); j++) {
-      neigh = NEIGHBOR(*graph1, i, j);
+    for (j = 0; j < DEGREE(*graph1, node); j++) {
+      neigh = NEIGHBOR(*graph1, node, j);
       if (!igraph_vector_binsearch2(seed_nodes, neigh)) { // filter to avoid duplicates
 	igraph_llist_push_back(&node_list, neigh);
       }
     }
     // collect neighbors in graph2
-    for (j = 0; j < DEGREE(*graph2, i); j++) {
-      neigh = NEIGHBOR(*graph2, i, j);
+    for (j = 0; j < DEGREE(*graph2, node); j++) {
+      neigh = NEIGHBOR(*graph2, node, j);
       if (!igraph_vector_binsearch2(seed_nodes, neigh)) {
 	igraph_llist_push_back(&node_list, neigh);
       }
     }
   }
   igraph_llist_to_vector(&node_list, &neighborhood_dups); // contains duplicates!
+  igraph_vector_sort(&neighborhood_dups);
   neigh_size = igraph_vector_size(&neighborhood_dups);
 
   // sort neighborhood and merge it with the seed nodes, while removing duplicates
 
-  igraph_vector_resize(neighborhood, changed_count+neigh_size);
-  igraph_vector_sort(&neighborhood_dups);
+  igraph_vector_resize(neighborhood, changed_count+neigh_size); // max. possible size
   i = 0; // index in seed_nodes
   j = 0; // index in neighborhood_dups
   k = 0; // index in neighborhood (merge result)
@@ -538,22 +547,23 @@ int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
       // check for edge events, i.e. check which incident edges have changed
       j = 0; // neighbor index at timestep t
       k = 0; // neighbor index at timestep t+1
-      VECTOR(edge_event)[0] = i;
-      while ((j < DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i)) ||
-		  (k < DEGREE(*(igraph_t *) VECTOR(*graphs)[t+1], i))) {
-	nei1 = NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t], i, j);
-	nei2 = NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t+1], i, k);
+      while ((j < OUT_DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i)) ||
+		  (k < OUT_DEGREE(*(igraph_t *) VECTOR(*graphs)[t+1], i))) {
+	nei1 = OUT_NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t], i, j);
+	nei2 = OUT_NEIGHBOR(*(igraph_t *) VECTOR(*graphs)[t+1], i, k);
 	new_event = 0;
 
-	if (j == DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i)) {
+	if (j == OUT_DEGREE(*(igraph_t *) VECTOR(*graphs)[t], i)) {
 	  // neighbors at timestep t exhausted, all remaining neighbors at time t+1
 	  // make edge insertion events
+	  VECTOR(edge_event)[0] = i;
 	  VECTOR(edge_event)[1] = nei2;
 	  new_event = 1;
 	  k++;
-	} else if (k == DEGREE(*(igraph_t *) VECTOR(*graphs)[t+1], i)) {
+	} else if (k == OUT_DEGREE(*(igraph_t *) VECTOR(*graphs)[t+1], i)) {
 	  // neighbors at timestep t+1 exhausted, all remaining neighbors at time t
 	  // make edge deletion events
+	  VECTOR(edge_event)[0] = i;
 	  VECTOR(edge_event)[1] = nei1;
 	  new_event = 1;
 	  j++;
@@ -561,6 +571,7 @@ int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
 	  // neighbors remaining at both timesteps
           if (nei1 < nei2) {
 	    // edge event: link to nei1 has been removed
+	    VECTOR(edge_event)[0] = i;
 	    VECTOR(edge_event)[1] = nei1;
 	    new_event = 1;
 	    j++;
@@ -572,6 +583,7 @@ int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
               if (VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t])[eid1]
 		    != VECTOR(*(igraph_vector_int_t *) VECTOR(*ecolors)[t+1])[eid2]) {
 		// edge event: link to nei1/nei2 has been relabelled
+		VECTOR(edge_event)[0] = i;
 		VECTOR(edge_event)[1] = nei1;
 		new_event = 1;
               }
@@ -580,6 +592,7 @@ int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
 	    k++;
 	  } else if (nei1 > nei2) {
 	    // edge event: link to nei2 has been added
+	    VECTOR(edge_event)[0] = i;
 	    VECTOR(edge_event)[1] = nei2;
 	    new_event = 1;
 	    k++;
@@ -588,9 +601,12 @@ int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
 
 	// create node selector for edge event
 	if (new_event) {
+	  igraph_vector_sort(&edge_event);
 	  igraph_i_compute_joint_neighborhood((igraph_t *) VECTOR(*graphs)[t],
 		    (igraph_t *) VECTOR(*graphs)[t+1], &edge_event, &neighborhood);
 	  node_selector = igraph_Calloc(1, igraph_vs_t);
+	  //igraph_vector_print(&edge_event);
+	  //igraph_vector_print(&neighborhood);
 	  IGRAPH_CHECK(igraph_vs_vector_copy(node_selector, &neighborhood));
 	  igraph_llist_ptr_push_back((igraph_llist_ptr_t *) VECTOR(*node_selectors)[t],
 				      node_selector);
