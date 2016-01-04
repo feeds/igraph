@@ -91,6 +91,17 @@ typedef enum igraph_gspan_variant_t {
 
 // Single graph support measures
 
+typedef int igraph_support_measure_t(const igraph_t *graph1,
+			   const igraph_t *graph2,
+			   const igraph_vector_int_t *vertex_color1,
+			   const igraph_vector_int_t *vertex_color2,
+			   const igraph_vector_int_t *edge_color1,
+			   const igraph_vector_int_t *edge_color2,
+			   igraph_bool_t induced,
+			   igraph_gspan_variant_t variant,
+			   igraph_integer_t *support,
+			   igraph_integer_t min_supp);
+
 int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_t *graph2,
 			   const igraph_vector_int_t *vertex_color1,
@@ -98,6 +109,7 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *edge_color1,
 			   const igraph_vector_int_t *edge_color2,
 			   igraph_bool_t induced,
+			   igraph_gspan_variant_t variant,
 			   igraph_integer_t *support,
 			   igraph_integer_t min_supp);
 
@@ -112,30 +124,9 @@ int igraph_mib_support(const igraph_t *graph1,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp);
 
-int igraph_mib_support_slow(const igraph_t *graph1,
-		       const igraph_t *graph2,
-		       const igraph_vector_int_t *vertex_color1,
-		       const igraph_vector_int_t *vertex_color2,
-		       const igraph_vector_int_t *edge_color1,
-		       const igraph_vector_int_t *edge_color2,
-		       igraph_bool_t induced,
-		       igraph_integer_t *support,
-		       igraph_integer_t min_supp);
-
 // Graph database support measures
 
-typedef int igraph_db_support_measure_t(const igraph_vector_ptr_t *graphs,
-					const igraph_vector_ptr_t *vertex_colors,
-					const igraph_vector_ptr_t *edge_colors,
-					const igraph_t *pattern,
-					const igraph_vector_int_t *pattern_vcolors,
-					const igraph_vector_int_t *pattern_ecolors,
-					igraph_bool_t induced,
-					igraph_gspan_variant_t variant,
-					igraph_integer_t *support,
-					igraph_integer_t min_supp);
-
-int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
+int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_ptr_t *vertex_colors,
 			  const igraph_vector_ptr_t *edge_colors,
 			  const igraph_t *pattern,
@@ -143,23 +134,15 @@ int igraph_db_mib_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_int_t *pattern_ecolors,
 			  igraph_bool_t induced,
 			  igraph_gspan_variant_t variant,
+			  igraph_support_measure_t single_graph_support,
 			  igraph_integer_t *support,
 			  igraph_integer_t min_supp);
-
-int igraph_db_shallow_support(const igraph_vector_ptr_t *graphs,
-			      const igraph_vector_ptr_t *vertex_colors,
-			      const igraph_vector_ptr_t *edge_colors,
-			      const igraph_t *pattern,
-			      const igraph_vector_int_t *pattern_vcolors,
-			      const igraph_vector_int_t *pattern_ecolors,
-			      igraph_bool_t induced,
-			      igraph_integer_t *support,
-			      igraph_integer_t min_supp);
 
 // Mining algorithms
 
 int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
-		const igraph_vector_ptr_t *edge_colors, igraph_db_support_measure_t *supp_measure,
+		const igraph_vector_ptr_t *edge_colors,
+		igraph_support_measure_t *single_graph_support,
 		igraph_integer_t min_supp, igraph_integer_t max_edges,
 		igraph_gspan_variant_t variant,
 		igraph_vector_ptr_t *frequent_subgraphs,
