@@ -40,6 +40,20 @@
 #include "igraph_constructors.h"
 
 
+// ------------- RUNTIME STATISTICS -------------
+
+static long int igraph_fsm_stats_subiso_success_count = 0;
+static long int igraph_fsm_stats_subiso_fail_count = 0;
+static long int igraph_fsm_stats_aggregated_support_count = 0;
+static long int igraph_fsm_stats_mibsupport_count = 0;
+static long int igraph_fsm_stats_mibsupport_subiso_success_count = 0;
+static long int igraph_fsm_stats_mibsupport_subiso_fail_count = 0;
+static long int igraph_fsm_stats_shallowsuppport_count = 0;
+static long int igraph_fsm_stats_noncanonical_count = 0;
+static long int igraph_fsm_stats_infrequent_count = 0;
+static long int igraph_fsm_stats_frequent_count = 0;
+
+
 // ------------- HELPER FUNCTIONS -------------
 
 void igraph_i_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
@@ -396,8 +410,11 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   } // if (!end)
 
   if (!end && success) {
-    //printf("   success!\n");
     *iso = 1;
+    igraph_fsm_stats_subiso_success_count++;
+  } else {
+    *iso = 0;
+    igraph_fsm_stats_subiso_fail_count++;
   }
 
   igraph_stack_destroy(&dfs_node_stack);
@@ -483,6 +500,7 @@ int igraph_mib_support(const igraph_t *graph1,
         return 1;
       }
       if (iso) {
+	igraph_fsm_stats_mibsupport_subiso_success_count++;
         cur_count += 1;
 
         // early termination: if we have already found at least min_supp
@@ -500,6 +518,8 @@ int igraph_mib_support(const igraph_t *graph1,
           //printf("prune\n");
           break;
         }
+      } else {
+	igraph_fsm_stats_mibsupport_subiso_fail_count++;
       }
     }
 
@@ -521,6 +541,8 @@ int igraph_mib_support(const igraph_t *graph1,
   }
 
   *support = cur_supp;
+  igraph_fsm_stats_mibsupport_count++;
+
   igraph_vector_destroy(&fixed);
   igraph_matrix_destroy(&automorphic_nodes);
   return 0;
@@ -550,6 +572,7 @@ int igraph_shallow_support(const igraph_t *graph1,
   } else {
     *support = 0;
   }
+  igraph_fsm_stats_shallowsuppport_count++;
   return 0;
 }
 
@@ -604,6 +627,7 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
       }
     }
   }
+  igraph_fsm_stats_aggregated_support_count++;
   return 0;
 }
 
@@ -1059,6 +1083,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     igraph_free(seed_graph);
     igraph_free(seed_vcolors);
     igraph_free(seed_ecolors);
+    igraph_fsm_stats_noncanonical_count++;
     return 0;
   }
 
@@ -1075,6 +1100,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     igraph_free(seed_graph);
     igraph_free(seed_vcolors);
     igraph_free(seed_ecolors);
+    igraph_fsm_stats_infrequent_count++;
     return 0;
   } else {
     // frequent seed, add to result
@@ -1082,6 +1108,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     igraph_llist_ptr_push_back(result_vcolor_list, seed_vcolors);
     igraph_llist_ptr_push_back(result_ecolor_list, seed_ecolors);
     igraph_llist_int_push_back(result_supp_list, seed_supp);
+    igraph_fsm_stats_frequent_count++;
   }
 
   if (igraph_i_dfscode_size(seed_dfscode) == max_edges) {
@@ -1562,6 +1589,28 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   igraph_llist_ptr_destroy(&result_graph_list);
   igraph_llist_ptr_destroy(&result_vcolor_list);
   igraph_llist_ptr_destroy(&result_ecolor_list);
+
+  printf("\nGSPAN STATISTICS\n"
+	  "total successful subisomorphism checks: %ld\n"
+	  "total failed subisomorphism checks: %ld\n"
+	  "DB support computations: %ld\n"
+	  "   MIB support computations: %ld\n"
+	  "      MIB successful subisomorphism checks: %ld\n"
+	  "      MIB failed subisomorphism checks: %ld\n"
+	  "   Shallow support computations: %ld\n"
+	  "Infrequent pattern candidates: %ld\n"
+	  "Frequent patterns: %ld\n"
+	  "Non-canonical pattern candidates: %ld\n",
+	  igraph_fsm_stats_subiso_success_count,
+	  igraph_fsm_stats_subiso_fail_count,
+	  igraph_fsm_stats_aggregated_support_count,
+	  igraph_fsm_stats_mibsupport_count,
+	  igraph_fsm_stats_mibsupport_subiso_success_count,
+	  igraph_fsm_stats_mibsupport_subiso_fail_count,
+	  igraph_fsm_stats_shallowsuppport_count,
+	  igraph_fsm_stats_infrequent_count,
+	  igraph_fsm_stats_frequent_count,
+	  igraph_fsm_stats_noncanonical_count);
 
   return 0;
 }

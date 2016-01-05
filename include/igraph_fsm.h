@@ -41,6 +41,19 @@
 __BEGIN_DECLS
 
 
+// Collect some runtime statistics
+static long int igraph_fsm_stats_subiso_success_count;
+static long int igraph_fsm_stats_subiso_fail_count;
+static long int igraph_fsm_stats_aggregated_support_count;
+static long int igraph_fsm_stats_mibsupport_count;
+static long int igraph_fsm_stats_mibsupport_subiso_success_count;
+static long int igraph_fsm_stats_mibsupport_subiso_fail_count;
+static long int igraph_fsm_stats_shallowsuppport_count;
+static long int igraph_fsm_stats_noncanonical_count;
+static long int igraph_fsm_stats_infrequent_count;
+static long int igraph_fsm_stats_frequent_count;
+
+
 typedef enum igraph_gspan_variant_t {
   IGRAPH_GSPAN_DEFAULT,
   IGRAPH_GSPAN_GERM,
