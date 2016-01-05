@@ -1593,20 +1593,25 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   printf("\nGSPAN STATISTICS\n"
 	  "total successful subisomorphism checks: %ld\n"
 	  "total failed subisomorphism checks: %ld\n"
+	  "   Sum: %ld\n"
 	  "DB support computations: %ld\n"
 	  "   MIB support computations: %ld\n"
 	  "      MIB successful subisomorphism checks: %ld\n"
 	  "      MIB failed subisomorphism checks: %ld\n"
+	  "         Sum: %ld\n"
 	  "   Shallow support computations: %ld\n"
 	  "Infrequent pattern candidates: %ld\n"
 	  "Frequent patterns: %ld\n"
 	  "Non-canonical pattern candidates: %ld\n",
 	  igraph_fsm_stats_subiso_success_count,
 	  igraph_fsm_stats_subiso_fail_count,
+	  igraph_fsm_stats_subiso_success_count+igraph_fsm_stats_subiso_fail_count,
 	  igraph_fsm_stats_aggregated_support_count,
 	  igraph_fsm_stats_mibsupport_count,
 	  igraph_fsm_stats_mibsupport_subiso_success_count,
 	  igraph_fsm_stats_mibsupport_subiso_fail_count,
+	  (igraph_fsm_stats_mibsupport_subiso_success_count
+		+ igraph_fsm_stats_mibsupport_subiso_fail_count),
 	  igraph_fsm_stats_shallowsuppport_count,
 	  igraph_fsm_stats_infrequent_count,
 	  igraph_fsm_stats_frequent_count,
