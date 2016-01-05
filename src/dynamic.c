@@ -272,6 +272,7 @@ int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
 // the union graph.
 //
 // assert: ecolors and vcolors must be from the range [1, max_ecolor] or [1, max_vcolor], resp.!
+// assert: node_selector (if created from vector) must be sorted ascendingly
 int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	  igraph_vector_int_t *vcolors1, igraph_vector_int_t *ecolors1,
 	  igraph_t *graph2,
@@ -294,7 +295,14 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
   igraph_bool_t has_ecolors = ((ecolors1 != NULL) && (ecolors2 != NULL)
 				  && (union_graph_ecolors != NULL));
 
-  // TODO: make sure that we only get vs_1, vs_vector, or vs_all
+  // make sure that we only get supported vertex selectors
+  if (!((igraph_vs_type(&node_selector) == IGRAPH_VS_1)
+      || (igraph_vs_type(&node_selector) == IGRAPH_VS_ALL)
+      || (igraph_vs_type(&node_selector) == IGRAPH_VS_SEQ)
+      || (igraph_vs_type(&node_selector) == IGRAPH_VS_VECTOR)
+      || (igraph_vs_type(&node_selector) == IGRAPH_VS_VECTORPTR))) {
+    IGRAPH_ERROR("invalid node selector", IGRAPH_EINVAL);
+  }
   IGRAPH_CHECK(igraph_vs_size(graph1, &node_selector, &vcount)); // same result for graph2
 
   IGRAPH_CHECK(igraph_empty(union_graph, vcount, /*directed=*/ 0));
@@ -303,12 +311,14 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
   }
 
   // create backward index for vertex id lookup
-  // TODO: only need this for vs_vector
+  // TODO: we don't need this for VS_1 and VS_ALL
   igraph_vit_create(graph1, node_selector, &vit);
   igraph_vector_int_init(&bw_index, igraph_vcount(graph1));
-  igraph_vector_int_fill(&bw_index, -1);
   for (i=0; (i<vcount) && (!IGRAPH_VIT_END(vit)); i++, IGRAPH_VIT_NEXT(vit)) {
-    VECTOR(bw_index)[(long int) IGRAPH_VIT_GET(vit)] = i;
+    // NOTE: we add 1 to the vertex id i to distinguish uninitialized elements from
+    // bw_index (value 0) from initialized elements. we have to subtract 1 again when using
+    // the backward index
+    VECTOR(bw_index)[(long int) IGRAPH_VIT_GET(vit)] = i+1;
   }
 
   IGRAPH_CHECK(igraph_llist_int_init(&edge_list));
@@ -328,9 +338,10 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
     while ((j < OUT_DEGREE(*graph1, orig_node)) || (k < OUT_DEGREE(*graph2, orig_node))) {
       // if we reached the end of one of the two vectors, fill it with the other
       if (j == OUT_DEGREE(*graph1, orig_node)) {
-	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)] >= 0) {
+	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)] > 0) {
 	  igraph_llist_int_push_back(&edge_list, i);
-	  igraph_llist_int_push_back(&edge_list,VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)]);
+	  igraph_llist_int_push_back(&edge_list,
+		VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)]-1);
 	  if (has_ecolors) {
 	    eid2 = OUT_NEIGH_TO_EID(*graph2, orig_node, k);
 	    igraph_llist_int_push_back(&ecolors_list, VECTOR(*ecolors2)[eid2]);
@@ -342,9 +353,10 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	continue;
       }
       if (k == OUT_DEGREE(*graph2, orig_node)) {
-	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)] >= 0) {
+	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)] > 0) {
 	  igraph_llist_int_push_back(&edge_list, i);
-	  igraph_llist_int_push_back(&edge_list,VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]);
+	  igraph_llist_int_push_back(&edge_list,
+		VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]-1);
 	  if (has_ecolors) {
 	    eid1 = OUT_NEIGH_TO_EID(*graph1, orig_node, j);
 	    igraph_llist_int_push_back(&ecolors_list, (max_ecolor+1)*VECTOR(*ecolors1)[eid1]);
@@ -358,9 +370,10 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 
       // both vectors are not exhausted yet
       if (OUT_NEIGHBOR(*graph1, orig_node, j) < OUT_NEIGHBOR(*graph2, orig_node, k)) {
-	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)] >= 0) {
+	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)] > 0) {
 	  igraph_llist_int_push_back(&edge_list, i);
-	  igraph_llist_int_push_back(&edge_list,VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]);
+	  igraph_llist_int_push_back(&edge_list,
+		VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]-1);
 	  if (has_ecolors) {
 	    eid1 = OUT_NEIGH_TO_EID(*graph1, orig_node, j);
 	    igraph_llist_int_push_back(&ecolors_list, (max_ecolor+1)*VECTOR(*ecolors1)[eid1]);
@@ -370,9 +383,10 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	}
 	j++;
       } else if (OUT_NEIGHBOR(*graph1, orig_node, j) == OUT_NEIGHBOR(*graph2, orig_node, k)) {
-	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)] >= 0) {
+	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)] > 0) {
 	  igraph_llist_int_push_back(&edge_list, i);
-	  igraph_llist_int_push_back(&edge_list,VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]);
+	  igraph_llist_int_push_back(&edge_list,
+		VECTOR(bw_index)[OUT_NEIGHBOR(*graph1,orig_node,j)]-1);
 	  if (has_ecolors) {
 	    eid1 = OUT_NEIGH_TO_EID(*graph1, orig_node, j);
 	    eid2 = OUT_NEIGH_TO_EID(*graph2, orig_node, k);
@@ -384,9 +398,10 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 	}
 	j++; k++;
       } else { // (OUT_NEIGHBOR(*graph1, orig_node, j) > OUT_NEIGHBOR(*graph2, orig_node, k))
-	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)] >= 0) {
+	if (VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)] > 0) {
 	  igraph_llist_int_push_back(&edge_list, i);
-	  igraph_llist_int_push_back(&edge_list,VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)]);
+	  igraph_llist_int_push_back(&edge_list,
+		VECTOR(bw_index)[OUT_NEIGHBOR(*graph2,orig_node,k)]-1);
 	  if (has_ecolors) {
 	    eid2 = OUT_NEIGH_TO_EID(*graph2, orig_node, k);
 	    igraph_llist_int_push_back(&ecolors_list, VECTOR(*ecolors2)[eid2]);
