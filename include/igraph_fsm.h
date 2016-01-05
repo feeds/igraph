@@ -43,7 +43,8 @@ __BEGIN_DECLS
 
 typedef enum igraph_gspan_variant_t {
   IGRAPH_GSPAN_DEFAULT,
-  IGRAPH_GSPAN_GERM
+  IGRAPH_GSPAN_GERM,
+  IGRAPH_GSPAN_EVOMINE
 } igraph_gspan_variant_t;
 
 // O(1) access to in- and out-neighbors and degrees
@@ -99,6 +100,7 @@ typedef int igraph_support_measure_t(const igraph_t *graph1,
 			   const igraph_vector_int_t *edge_color2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
+			   void *variant_data,
 			   igraph_integer_t *support,
 			   igraph_integer_t min_supp);
 
@@ -110,6 +112,7 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *edge_color2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
+			   void *variant_data,
 			   igraph_integer_t *support,
 			   igraph_integer_t min_supp);
 
@@ -121,6 +124,7 @@ int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_vector_int_t *edge_color2,
 		       igraph_bool_t induced,
 		       igraph_gspan_variant_t variant,
+		       void *variant_data,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp);
 
@@ -134,6 +138,7 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_int_t *pattern_ecolors,
 			  igraph_bool_t induced,
 			  igraph_gspan_variant_t variant,
+			  void *variant_data,
 			  igraph_support_measure_t single_graph_support,
 			  igraph_integer_t *support,
 			  igraph_integer_t min_supp);

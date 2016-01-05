@@ -78,18 +78,6 @@ void igraph_i_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
 }
 
 
-igraph_bool_t igraph_i_mib_isohandler(const igraph_vector_t *map12,
-				      const igraph_vector_t *map21, void *arg) {
-  igraph_matrix_t *target_hits = (igraph_matrix_t *) arg;
-  long int vcount2 = igraph_vector_size(map21);
-  long int i;
-  for (i = 0; i < vcount2; i++) {
-    igraph_matrix_set(target_hits, i, VECTOR(*map21)[i], 1.);
-  }
-  return 1;
-}
-
-
 // graph1 is the larger graph, graph2 is the smaller graph
 // Can handle a single fixed assignment (pattern node, target node) passed as a length-2 vector
 //
@@ -120,6 +108,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 			   const igraph_vector_int_t *edge_color2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
+			   void *variant_data,
 			   igraph_vector_t *fixed,
 			   igraph_bool_t *iso) {
   long int vcount1 = igraph_vcount(graph1);
@@ -128,6 +117,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   long int pattern_node, other_pattern_node, target_node, other_target_node;
   long int indeg1, indeg2, outdeg1, outdeg2, max_deg;
   long int germ_delta = 0;
+  long int max_ecolor, max_vcolor;
   igraph_integer_t eid1, eid2;
   int end, success;
   igraph_vector_t node_ordering;
@@ -147,6 +137,10 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   if ((variant == IGRAPH_GSPAN_GERM) && directed) {
     IGRAPH_ERROR("directed subisomorphisms in GERM mode not implemented", IGRAPH_UNIMPLEMENTED);
   }
+  if (variant == IGRAPH_GSPAN_EVOMINE) {
+    max_vcolor = ((long int *) variant_data)[0];
+    max_ecolor = ((long int *) variant_data)[1];
+  }
 
   // STEP 0: create a static ordering of the pattern nodes by DFS
   // if a fixed assignment is given, use this node as root, otherwise take the one with
@@ -159,12 +153,39 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   IGRAPH_CHECK(igraph_vector_init(&visited, vcount2));
 
   if (fixed == NULL) {
-    // get maximum degree vertex
-    max_deg = 0; j = 0;
-    for (i = 0; i < vcount2; i++) {
-      if (DEGREE(*graph2, i) > max_deg) {
-	max_deg = DEGREE(*graph2, i);
-	j = i;
+    if (variant == IGRAPH_GSPAN_EVOMINE) {
+      // initial vertex in EvoMine: dynamic node label, or incident to dynamic edge
+      j = 0;
+      for (i = 0; i < vcount2; i++) {
+	if ((vertex_color2 != NULL) && (VECTOR(*vertex_color2)[i]%(max_vcolor+1)
+	      != VECTOR(*vertex_color2)[i]/(max_vcolor+1))) {
+	  // dynamic node label
+	  j = i;
+	  break;
+	} else {
+	  for (j = 0; j < DEGREE(*graph2, i); j++) {
+	    if ((edge_color2 != NULL) &&
+		  (VECTOR(*edge_color2)[NEIGH_TO_EID(*graph2, i, j)]%(max_ecolor+1)
+		    != VECTOR(*edge_color2)[NEIGH_TO_EID(*graph2, i, j)]/(max_ecolor+1))) {
+	      // incident to dynamic edge
+	      break;
+	    }
+	  }
+	  if (j != DEGREE(*graph2, i)) {
+	    j = i;
+	    break;
+	  }
+	}
+      }
+    } else {
+      // initial vertex in RI: maximum degree vertex
+      max_deg = 0;
+      j = 0;
+      for (i = 0; i < vcount2; i++) {
+	if (DEGREE(*graph2, i) > max_deg) {
+	  max_deg = DEGREE(*graph2, i);
+	  j = i;
+	}
       }
     }
     IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, j));
@@ -434,6 +455,7 @@ int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_vector_int_t *edge_color2,
 		       igraph_bool_t induced,
 		       igraph_gspan_variant_t variant,
+		       void *variant_data,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp) {
   igraph_vector_t fixed;
@@ -453,7 +475,7 @@ int igraph_mib_support(const igraph_t *graph1,
       VECTOR(fixed)[1] = j; // force assignment: pattern node j
       iso = 0;
       if (igraph_i_subisomorphic(graph2, graph2, vertex_color2, vertex_color2, edge_color2,
-	      edge_color2, induced, IGRAPH_GSPAN_DEFAULT, &fixed, &iso)) {
+	      edge_color2, induced, IGRAPH_GSPAN_DEFAULT, /*variant_data=*/ NULL, &fixed, &iso)) {
 	igraph_vector_destroy(&fixed);
 	igraph_matrix_destroy(&automorphic_nodes);
 	return 1;
@@ -487,7 +509,7 @@ int igraph_mib_support(const igraph_t *graph1,
       VECTOR(fixed)[1] = j; // force assignment: target node j
       iso = 0;
       if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
-	edge_color2, induced, variant, &fixed, &iso)) {
+	edge_color2, induced, variant, variant_data, &fixed, &iso)) {
         igraph_vector_destroy(&fixed);
         return 1;
       }
@@ -545,11 +567,12 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *edge_color2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
+			   void *variant_data,
 			   igraph_integer_t *support,
 			   igraph_integer_t min_supp) {
   igraph_bool_t iso;
   if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
-		edge_color1, edge_color2, induced, variant,
+		edge_color1, edge_color2, induced, variant, variant_data,
 		/*fixed=*/ NULL, &iso)) {
     return 1;
   }
@@ -570,6 +593,7 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_int_t *pattern_ecolors,
 			  igraph_bool_t induced,
 			  igraph_gspan_variant_t variant,
+			  void *variant_data,
 			  igraph_support_measure_t single_graph_support,
 			  igraph_integer_t *support,
 			  igraph_integer_t min_supp) {
@@ -582,14 +606,15 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
 			      (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
 			      (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
-			      /*induced=*/ 0, variant, &gsupp, /*min_supp=*/ 0);
+			      /*induced=*/ 0, variant, variant_data, &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     } else {
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
 			      (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
-			      NULL, NULL, /*induced=*/ 0, variant, &gsupp, /*min_supp=*/ 0);
+			      NULL, NULL, /*induced=*/ 0, variant, variant_data,
+			      &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     }
@@ -598,13 +623,14 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern, NULL, NULL,
 			      (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
-			      /*induced=*/ 0, variant, &gsupp, /*min_supp=*/ 0);
+			      /*induced=*/ 0, variant, variant_data, &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     } else {
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern, NULL, NULL,
-			      NULL, NULL, /*induced=*/ 0, variant, &gsupp, /*min_supp=*/ 0);
+			      NULL, NULL, /*induced=*/ 0, variant, variant_data,
+			      &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     }
@@ -1069,7 +1095,8 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 
   // compute seed support
   igraph_aggregated_db_support(graphs, vertex_colors, edge_colors, seed_graph,
-		  seed_vcolors, seed_ecolors, /*induced=*/ 0, variant, single_graph_support,
+		  seed_vcolors, seed_ecolors, /*induced=*/ 0, variant, variant_data,
+		  single_graph_support,
 		  &seed_supp, min_supp);
   if (seed_supp < min_supp) {
     // infrequent seed, free memory and prune
@@ -1286,6 +1313,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   long int graph_count = igraph_vector_ptr_size(graphs);
   long int i, j, k, max_vcolor, max_ecolor;
+  long int max_color[2];
   igraph_vector_int_t vcolor_freq, ecolor_freq; // frequencies of all colors
   igraph_vector_int_t freq_ecolors, freq_vcolors; // lists of all frequent colors
   igraph_vector_int_t *vcolor, *ecolor;
@@ -1304,9 +1332,13 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
       // for the extension operation
       variant_data = &max_ecolor;
       break;
+    case IGRAPH_GSPAN_EVOMINE:
+      // EvoMine needs the maximum node and edge color to determine label strings
+      variant_data = &max_color;
+      break;
     case IGRAPH_GSPAN_DEFAULT:
     default:
-      // nothing to do
+      variant_data = NULL;
       break;
   }
 
@@ -1336,6 +1368,8 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
       }
     }
   }
+  max_color[0] = max_vcolor;
+  max_color[1] = max_ecolor;
 
   // count all color occurrences
   igraph_vector_int_init(&vcolor_freq, max_vcolor+1);
