@@ -756,3 +756,24 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
   return 0;
 }
 
+
+int igraph_write_colored_graph(igraph_t *g, igraph_vector_int_t *vcolors,
+      igraph_vector_int_t *ecolors, FILE *f) {
+  long int i;
+  igraph_integer_t from, to;
+  for (i = 0; i < igraph_vcount(g); i++) {
+    if (vcolors != NULL)
+      fprintf(f, "v %ld %d\n", i, VECTOR(*vcolors)[i]);
+    else
+      fprintf(f, "v %ld\n", i);
+  }
+  for (i = 0; i < igraph_ecount(g); i++) {
+    IGRAPH_CHECK(igraph_edge(g, i, &from, &to));
+    if (ecolors != NULL)
+      fprintf(f, "e %ld %ld %d\n", (long int) from, (long int) to, VECTOR(*ecolors)[i]);
+    else
+      fprintf(f, "e %ld %ld\n", (long int) from, (long int) to);
+  }
+  return 0;
+}
+
