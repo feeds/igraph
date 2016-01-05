@@ -117,7 +117,6 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   long int pattern_node, other_pattern_node, target_node, other_target_node;
   long int indeg1, indeg2, outdeg1, outdeg2, max_deg;
   long int germ_delta = 0;
-  long int max_ecolor, max_vcolor;
   igraph_integer_t eid1, eid2;
   int end, success;
   igraph_vector_t node_ordering;
@@ -137,10 +136,6 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   if ((variant == IGRAPH_GSPAN_GERM) && directed) {
     IGRAPH_ERROR("directed subisomorphisms in GERM mode not implemented", IGRAPH_UNIMPLEMENTED);
   }
-  if (variant == IGRAPH_GSPAN_EVOMINE) {
-    max_vcolor = ((long int *) variant_data)[0];
-    max_ecolor = ((long int *) variant_data)[1];
-  }
 
   // STEP 0: create a static ordering of the pattern nodes by DFS
   // if a fixed assignment is given, use this node as root, otherwise take the one with
@@ -153,39 +148,13 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   IGRAPH_CHECK(igraph_vector_init(&visited, vcount2));
 
   if (fixed == NULL) {
-    if (variant == IGRAPH_GSPAN_EVOMINE) {
-      // initial vertex in EvoMine: dynamic node label, or incident to dynamic edge
-      j = 0;
-      for (i = 0; i < vcount2; i++) {
-	if ((vertex_color2 != NULL) && (VECTOR(*vertex_color2)[i]%(max_vcolor+1)
-	      != VECTOR(*vertex_color2)[i]/(max_vcolor+1))) {
-	  // dynamic node label
-	  j = i;
-	  break;
-	} else {
-	  for (j = 0; j < DEGREE(*graph2, i); j++) {
-	    if ((edge_color2 != NULL) &&
-		  (VECTOR(*edge_color2)[NEIGH_TO_EID(*graph2, i, j)]%(max_ecolor+1)
-		    != VECTOR(*edge_color2)[NEIGH_TO_EID(*graph2, i, j)]/(max_ecolor+1))) {
-	      // incident to dynamic edge
-	      break;
-	    }
-	  }
-	  if (j != DEGREE(*graph2, i)) {
-	    j = i;
-	    break;
-	  }
-	}
-      }
-    } else {
-      // initial vertex in RI: maximum degree vertex
-      max_deg = 0;
-      j = 0;
-      for (i = 0; i < vcount2; i++) {
-	if (DEGREE(*graph2, i) > max_deg) {
-	  max_deg = DEGREE(*graph2, i);
-	  j = i;
-	}
+    // initial vertex in RI: maximum degree vertex
+    max_deg = 0;
+    j = 0;
+    for (i = 0; i < vcount2; i++) {
+      if (DEGREE(*graph2, i) > max_deg) {
+        max_deg = DEGREE(*graph2, i);
+        j = i;
       }
     }
     IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, j));
