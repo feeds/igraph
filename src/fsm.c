@@ -45,6 +45,8 @@
 
 static long int igraph_fsm_stats_subiso_success_count = 0;
 static long int igraph_fsm_stats_subiso_fail_count = 0;
+static long int igraph_fsm_stats_subiso_failed_edge_existence_count = 0;
+static long int igraph_fsm_stats_subiso_failed_edge_color_count = 0;
 static long int igraph_fsm_stats_aggregated_support_count = 0;
 static long int igraph_fsm_stats_mibsupport_count = 0;
 static long int igraph_fsm_stats_mibsupport_subiso_success_count = 0;
@@ -211,7 +213,9 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
     if ((variant == IGRAPH_GSPAN_LFRMINER) && (i == 0)) {
       // we just added the s node at the first position of the DFS node ordering,
-      // the next node must be the e node (which is a neighbor). put in on top of the stack.
+      // and added its neighbors (except for e node) to the stack.
+      // The next node in the ordering must be the e node (which is a neighbor), so we
+      // put in on top of the stack.
       for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
 	if (VECTOR(*vertex_color2)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
 	  IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
@@ -337,6 +341,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, 1, 0);
 	  if (eid1 == -1) {
 	    success = 0;
+	    igraph_fsm_stats_subiso_failed_edge_existence_count++;
 	  } else {
 	    if (variant == IGRAPH_GSPAN_GERM) {
 	      // edge timestamps (=colors) do not have to match exactly, but with
@@ -347,11 +352,13 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 				- VECTOR(*edge_color2)[(long int)eid2]);
 		if (germ_delta < 0) {
 		  success = 0;
+		  igraph_fsm_stats_subiso_failed_edge_color_count++;
 		}
 	      }
 	      if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
 		    VECTOR(*edge_color2)[(long int)eid2] + germ_delta)) {
 		success = 0;
+		igraph_fsm_stats_subiso_failed_edge_color_count++;
 	      }
 	    } else if (variant == IGRAPH_GSPAN_LFRMINER) {
 	      // edge timestamps (=colors) do not have to match exactly, they only
@@ -362,11 +369,13 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	      } else if (edge_color1 && (VECTOR(*edge_color1)[(long int)eid1]
 		    >= lfrminer_se_timestamp)) {
 		success = 0;
+		igraph_fsm_stats_subiso_failed_edge_color_count++;
 	      }
 	    } else { // all other gSpan variants
 	      if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
 		    VECTOR(*edge_color2)[(long int)eid2])) {
 		success = 0;
+		igraph_fsm_stats_subiso_failed_edge_color_count++;
 	      }
 	    }
 	  }
@@ -374,6 +383,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, 1, 0);
 	  if (eid1 > -1) {
 	    success = 0;
+	    igraph_fsm_stats_subiso_failed_edge_existence_count++;
 	  }
 	}
 
@@ -383,16 +393,19 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, 1, 0);
 	    if (eid1 == -1) {
 	      success = 0;
+	      igraph_fsm_stats_subiso_failed_edge_existence_count++;
 	    } else {
 	      if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
 		    VECTOR(*edge_color2)[(long int)eid2]) {
 		success = 0;
+		igraph_fsm_stats_subiso_failed_edge_color_count++;
 	      }
 	    }
 	  } else if (induced) {
 	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, 1, 0);
 	    if (eid1 > -1) {
 	      success = 0;
+	      igraph_fsm_stats_subiso_failed_edge_existence_count++;
 	    }
 	  }
 	}
@@ -1177,7 +1190,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		  seed_vcolors, seed_ecolors, /*induced=*/ 0, variant, variant_data,
 		  single_graph_support,
 		  &seed_supp, min_supp);
-  printf("   %ld\n", (long int) seed_supp);
+  printf("   supp: %ld\n", (long int) seed_supp);
   if (seed_supp < min_supp) {
     // infrequent seed, free memory and prune
     igraph_destroy(seed_graph);
@@ -1729,28 +1742,32 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   igraph_llist_ptr_destroy(&result_ecolor_list);
 
   printf("\nGSPAN STATISTICS\n"
-	  "total successful subisomorphism checks: %ld\n"
-	  "total failed subisomorphism checks: %ld\n"
-	  "   Sum: %ld\n"
+	  "total subisomorphism checks: %ld\n"
+	  "   successful: %ld\n"
+	  "   failed: %ld\n"
+	  "   failed edge existence: %ld\n"
+	  "   failed edge color: %ld\n"
 	  "DB support computations: %ld\n"
 	  "   MIB support computations: %ld\n"
+	  "   MIB subisomorphism checks: %ld\n"
 	  "      MIB successful subisomorphism checks: %ld\n"
 	  "      MIB failed subisomorphism checks: %ld\n"
-	  "         Sum: %ld\n"
 	  "   Shallow support computations: %ld\n"
 	  "   Ego-based support computations: %ld\n"
 	  "Infrequent pattern candidates: %ld\n"
 	  "Frequent patterns: %ld\n"
 	  "Non-canonical pattern candidates: %ld\n",
+	  igraph_fsm_stats_subiso_success_count+igraph_fsm_stats_subiso_fail_count,
 	  igraph_fsm_stats_subiso_success_count,
 	  igraph_fsm_stats_subiso_fail_count,
-	  igraph_fsm_stats_subiso_success_count+igraph_fsm_stats_subiso_fail_count,
+	  igraph_fsm_stats_subiso_failed_edge_existence_count,
+	  igraph_fsm_stats_subiso_failed_edge_color_count,
 	  igraph_fsm_stats_aggregated_support_count,
 	  igraph_fsm_stats_mibsupport_count,
-	  igraph_fsm_stats_mibsupport_subiso_success_count,
-	  igraph_fsm_stats_mibsupport_subiso_fail_count,
 	  (igraph_fsm_stats_mibsupport_subiso_success_count
 		+ igraph_fsm_stats_mibsupport_subiso_fail_count),
+	  igraph_fsm_stats_mibsupport_subiso_success_count,
+	  igraph_fsm_stats_mibsupport_subiso_fail_count,
 	  igraph_fsm_stats_shallowsuppport_count,
 	  igraph_fsm_stats_egobasedsuppport_count,
 	  igraph_fsm_stats_infrequent_count,
