@@ -1522,6 +1522,53 @@ int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ec
 }
 
 
+int igraph_i_minmax_colors(const igraph_vector_ptr_t *vertex_colors,
+		       const igraph_vector_ptr_t *edge_colors,
+		       long int *max_vcolor, long int *max_ecolor,
+		       long int *min_vcolor, long int *min_ecolor) {
+  long int i, graph_count;
+  int cur_min, cur_max;
+  igraph_vector_int_t *colors;
+
+  *max_vcolor = -1;
+  *max_ecolor = -1;
+  *min_vcolor = INT_MAX;
+  *min_ecolor = INT_MAX;
+
+  if ((vertex_colors == NULL) && (edge_colors == NULL)) {
+    return 0;
+  } else if (vertex_colors != NULL) {
+    graph_count = igraph_vector_ptr_size(vertex_colors);
+  } else {
+    graph_count = igraph_vector_ptr_size(edge_colors);
+  }
+
+  for (i = 0; i < graph_count; i++) {
+    if (vertex_colors != NULL) {
+      colors = (igraph_vector_int_t *) VECTOR(*vertex_colors)[i];
+      IGRAPH_CHECK(igraph_vector_int_minmax(colors, &cur_min, &cur_max));
+      if (cur_max > *max_vcolor) {
+        *max_vcolor = cur_max;
+      }
+      if (cur_min < *min_vcolor) {
+        *min_vcolor = cur_min;
+      }
+    }
+    if (edge_colors != NULL) {
+      colors = (igraph_vector_int_t *) VECTOR(*edge_colors)[i];
+      IGRAPH_CHECK(igraph_vector_int_minmax(colors, &cur_min, &cur_max));
+      if (cur_max > *max_ecolor) {
+        *max_ecolor = cur_max;
+      }
+      if (cur_min < *min_ecolor) {
+        *min_ecolor = cur_min;
+      }
+    }
+  }
+  return 0;
+}
+
+
 // public interface
 
 // assert: #graphs == #vertex_colors == #edge_colors
@@ -1539,7 +1586,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 		 igraph_vector_int_t *frequent_subgraph_supps) {
 
   long int graph_count = igraph_vector_ptr_size(graphs);
-  long int i, j, max_vcolor, max_ecolor, min_ecolor;
+  long int i, j, max_vcolor, max_ecolor, min_vcolor, min_ecolor;
   igraph_vector_int_t vcolor_freq, ecolor_freq; // frequencies of all colors
   igraph_vector_int_t freq_ecolors, freq_vcolors; // lists of all frequent colors
   igraph_vector_int_t *vcolor, *ecolor;
@@ -1575,33 +1622,9 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   // FIND FREQUENT VERTEX AND EDGE COLORS
 
   // determine minimum/maximum vertex and edge color
-  max_vcolor = -1;
-  max_ecolor = -1;
-  min_ecolor = INT_MAX;
-  if (vertex_colors != NULL || edge_colors != NULL) {
-    for (i = 0; i < graph_count; i++) {
-      g = (igraph_t *) VECTOR(*graphs)[i];
-      if (vertex_colors != NULL) {
-	vcolor = (igraph_vector_int_t *) VECTOR(*vertex_colors)[i];
-	for (j = 0; j < igraph_vcount(g); j++) {
-	  if (VECTOR(*vcolor)[j] > max_vcolor) {
-	    max_vcolor = VECTOR(*vcolor)[j];
-	  }
-	}
-      }
-      if (edge_colors != NULL) {
-	ecolor = (igraph_vector_int_t *) VECTOR(*edge_colors)[i];
-	for (j = 0; j < igraph_ecount(g); j++) {
-	  if (VECTOR(*ecolor)[j] > max_ecolor) {
-	    max_ecolor = VECTOR(*ecolor)[j];
-	  }
-	  if (VECTOR(*ecolor)[j] < min_ecolor) {
-	    min_ecolor = VECTOR(*ecolor)[j];
-	  }
-	}
-      }
-    }
-  }
+  igraph_i_minmax_colors(vertex_colors, edge_colors, &max_vcolor, &max_ecolor,
+			 &min_vcolor, &min_ecolor);
+
   if (variant == IGRAPH_GSPAN_GERM) {
     *(long int *)variant_data = max_ecolor-min_ecolor;
   } else if (variant == IGRAPH_GSPAN_EVOMINE) {
