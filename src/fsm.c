@@ -30,6 +30,7 @@
 
 #include <stdlib.h>
 #include <string.h> // memcpy
+#include <limits.h> // INT_MAX
 #include "igraph_fsm.h"
 #include "igraph_matrix.h"
 #include "igraph_stack.h"
@@ -1308,8 +1309,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 		 igraph_vector_int_t *frequent_subgraph_supps) {
 
   long int graph_count = igraph_vector_ptr_size(graphs);
-  long int i, j, k, max_vcolor, max_ecolor;
-  long int max_color[2];
+  long int i, j, k, max_vcolor, max_ecolor, min_ecolor;
   igraph_vector_int_t vcolor_freq, ecolor_freq; // frequencies of all colors
   igraph_vector_int_t freq_ecolors, freq_vcolors; // lists of all frequent colors
   igraph_vector_int_t *vcolor, *ecolor;
@@ -1324,13 +1324,13 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	IGRAPH_ERROR("GERM needs edge labels that encode timestamps, but no edge labels specified",
 			  IGRAPH_EINVAL);
       }
-      // GERM needs to know the maximum possible timestamp (encoded as edge color)
+      // GERM needs to know the maximum possible relative timestamp
       // for the extension operation
-      variant_data = &max_ecolor;
+      variant_data = igraph_Calloc(1, long int);
       break;
     case IGRAPH_GSPAN_EVOMINE:
       // EvoMine needs the maximum node and edge color to determine label strings
-      variant_data = &max_color;
+      variant_data = igraph_Calloc(2, long int);
       break;
     case IGRAPH_GSPAN_DEFAULT:
     default:
@@ -1340,9 +1340,10 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   // FIND FREQUENT VERTEX AND EDGE COLORS
 
-  // determine maximum vertex and edge color
+  // determine minimum/maximum vertex and edge color
   max_vcolor = -1;
   max_ecolor = -1;
+  min_ecolor = INT_MAX;
   if (vertex_colors != NULL || edge_colors != NULL) {
     for (i = 0; i < graph_count; i++) {
       g = (igraph_t *) VECTOR(*graphs)[i];
@@ -1360,12 +1361,19 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  if (VECTOR(*ecolor)[j] > max_ecolor) {
 	    max_ecolor = VECTOR(*ecolor)[j];
 	  }
+	  if (VECTOR(*ecolor)[j] < min_ecolor) {
+	    min_ecolor = VECTOR(*ecolor)[j];
+	  }
 	}
       }
     }
   }
-  max_color[0] = max_vcolor;
-  max_color[1] = max_ecolor;
+  if (variant == IGRAPH_GSPAN_GERM) {
+    *(long int *)variant_data = max_ecolor-min_ecolor;
+  } else if (variant == IGRAPH_GSPAN_EVOMINE) {
+    ((long int *)variant_data)[0] = max_vcolor;
+    ((long int *)variant_data)[1] = max_ecolor;
+  }
 
   // count all color occurrences
   igraph_vector_int_init(&vcolor_freq, max_vcolor+1);
@@ -1554,6 +1562,10 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   }
 
   // CLEAN UP
+
+  if (variant_data != NULL) {
+    igraph_free(variant_data);
+  }
 
   igraph_vector_int_destroy(&vcolor_freq);
   igraph_vector_int_destroy(&ecolor_freq);
