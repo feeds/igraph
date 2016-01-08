@@ -1569,6 +1569,79 @@ int igraph_i_minmax_colors(const igraph_vector_ptr_t *vertex_colors,
 }
 
 
+
+int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
+		const igraph_vector_ptr_t *edge_colors, long int min_supp,
+		long int max_vcolor, long int max_ecolor,
+		igraph_vector_int_t *freq_vcolors, igraph_vector_int_t *freq_ecolors) {
+  long int i, j, graph_count;
+  igraph_vector_int_t vcolor_freq, ecolor_freq;
+  igraph_vector_int_t *colors;
+
+  if ((vertex_colors == NULL) && (edge_colors == NULL)) {
+    igraph_vector_int_resize(freq_vcolors, 0);
+    igraph_vector_int_resize(freq_ecolors, 0);
+    return 0;
+  } else if (vertex_colors != NULL) {
+    igraph_vector_int_resize(freq_ecolors, 0);
+    graph_count = igraph_vector_ptr_size(vertex_colors);
+  } else {
+    igraph_vector_int_resize(freq_vcolors, 0);
+    graph_count = igraph_vector_ptr_size(edge_colors);
+  }
+
+  igraph_vector_int_init(&vcolor_freq, max_vcolor+1);
+  igraph_vector_int_init(&ecolor_freq, max_ecolor+1);
+
+  // count all color occurrences
+  for (i = 0; i < graph_count; i++) {
+    if (vertex_colors != NULL) {
+      colors = (igraph_vector_int_t *) VECTOR(*vertex_colors)[i];
+      for (j = 0; j < igraph_vector_int_size(colors); j++) {
+        VECTOR(vcolor_freq)[VECTOR(*colors)[j]] += 1;
+      }
+    }
+    if (edge_colors != NULL) {
+      colors = (igraph_vector_int_t *) VECTOR(*edge_colors)[i];
+      for (j = 0; j < igraph_vector_int_size(colors); j++) {
+        VECTOR(ecolor_freq)[VECTOR(*colors)[j]] += 1;
+      }
+    }
+  }
+
+  // keep only frequent colors
+  igraph_vector_int_resize(freq_vcolors, max_vcolor+2); // the last element is just for
+  igraph_vector_int_resize(freq_ecolors, max_ecolor+2); // guaranteed loop termination below
+  igraph_vector_int_fill(freq_vcolors, -1);
+  igraph_vector_int_fill(freq_ecolors, -1);
+
+  if (vertex_colors != NULL) {
+    j = 0;
+    for (i = 0; i <= max_vcolor; i++) {
+      if (VECTOR(vcolor_freq)[i] >= min_supp) {
+	VECTOR(*freq_vcolors)[j] = i;
+	j += 1;
+      }
+    }
+  }
+  if (edge_colors != NULL) {
+    j = 0;
+    for (i = 0; i <= max_ecolor; i++) {
+      if (VECTOR(ecolor_freq)[i] >= min_supp) {
+	VECTOR(*freq_ecolors)[j] = i;
+	j += 1;
+      }
+    }
+  }
+
+  igraph_vector_int_destroy(&vcolor_freq);
+  igraph_vector_int_destroy(&ecolor_freq);
+
+  return 0;
+}
+
+
+
 // public interface
 
 // assert: #graphs == #vertex_colors == #edge_colors
@@ -1584,14 +1657,13 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 		 igraph_vector_ptr_t *frequent_subgraph_vcolors,
 		 igraph_vector_ptr_t *frequent_subgraph_ecolors,
 		 igraph_vector_int_t *frequent_subgraph_supps) {
-
-  long int graph_count = igraph_vector_ptr_size(graphs);
-  long int i, j, max_vcolor, max_ecolor, min_vcolor, min_ecolor;
-  igraph_vector_int_t vcolor_freq, ecolor_freq; // frequencies of all colors
-  igraph_vector_int_t freq_ecolors, freq_vcolors; // lists of all frequent colors
-  igraph_vector_int_t *vcolor, *ecolor;
-  igraph_t *g;
   void *variant_data;
+  long int max_vcolor, max_ecolor, min_vcolor, min_ecolor;
+  igraph_vector_int_t freq_ecolors, freq_vcolors;
+  igraph_llist_ptr_t initial_patterns;
+  igraph_llist_item_ptr_t *item_ptr;
+  igraph_llist_ptr_t result_graph_list, result_vcolor_list, result_ecolor_list;
+  igraph_llist_int_t result_supp_list;
 
   // INITIALIZE DIFFERENT VARIANTS OF GSPAN
 
@@ -1623,7 +1695,13 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   // determine minimum/maximum vertex and edge color
   igraph_i_minmax_colors(vertex_colors, edge_colors, &max_vcolor, &max_ecolor,
-			 &min_vcolor, &min_ecolor);
+			&min_vcolor, &min_ecolor);
+
+  // determine frequent vertex and edge colors
+  igraph_vector_int_init(&freq_vcolors, 0);
+  igraph_vector_int_init(&freq_ecolors, 0);
+  igraph_i_frequent_colors(vertex_colors, edge_colors, min_supp, max_vcolor, max_ecolor,
+			&freq_vcolors, &freq_ecolors);
 
   if (variant == IGRAPH_GSPAN_GERM) {
     *(long int *)variant_data = max_ecolor-min_ecolor;
@@ -1632,54 +1710,8 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
     ((long int *)variant_data)[1] = max_ecolor;
   }
 
-  // count all color occurrences
-  igraph_vector_int_init(&vcolor_freq, max_vcolor+1);
-  igraph_vector_int_init(&ecolor_freq, max_ecolor+1);
-  if (vertex_colors != NULL || edge_colors != NULL) {
-    for (i = 0; i < graph_count; i++) {
-      g = (igraph_t *) VECTOR(*graphs)[i];
-      if (vertex_colors != NULL) {
-	vcolor = (igraph_vector_int_t *) VECTOR(*vertex_colors)[i];
-	for (j = 0; j < igraph_vcount(g); j++) {
-	  VECTOR(vcolor_freq)[VECTOR(*vcolor)[j]] += 1;
-	}
-      }
-      if (edge_colors != NULL) {
-	ecolor = (igraph_vector_int_t *) VECTOR(*edge_colors)[i];
-	for (j = 0; j < igraph_ecount(g); j++) {
-	  VECTOR(ecolor_freq)[VECTOR(*ecolor)[j]] += 1;
-	}
-      }
-    }
-  }
-
-  // keep only frequent colors
-  igraph_vector_int_init(&freq_vcolors, max_vcolor+2); // the last element is just for
-  igraph_vector_int_init(&freq_ecolors, max_ecolor+2); // guaranteed loop termination below
-  igraph_vector_int_fill(&freq_vcolors, -1);
-  igraph_vector_int_fill(&freq_ecolors, -1);
-  if (vertex_colors != NULL) {
-    j = 0;
-    for (i = 0; i <= max_vcolor; i++) {
-      if (VECTOR(vcolor_freq)[i] >= min_supp) {
-	VECTOR(freq_vcolors)[j] = i;
-	j += 1;
-      }
-    }
-  }
-  if (edge_colors != NULL) {
-    j = 0;
-    for (i = 0; i <= max_ecolor; i++) {
-      if (VECTOR(ecolor_freq)[i] >= min_supp) {
-	VECTOR(freq_ecolors)[j] = i;
-	j += 1;
-      }
-    }
-  }
-
   // BUILD ALL 1-EDGE GRAPHS AS SEEDS
 
-  igraph_llist_ptr_t initial_patterns;
   IGRAPH_CHECK(igraph_llist_ptr_init(&initial_patterns));
 
   switch (variant) {
@@ -1696,21 +1728,15 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   // RECURSIVELY EXPAND ALL FREQUENT 1-EDGE GRAPHS BY PATTERN GROWTH
 
-  igraph_dfscode_t *pattern_dfscode;
-  igraph_llist_item_ptr_t *item_ptr;
-  igraph_llist_ptr_t result_graph_list, result_vcolor_list, result_ecolor_list;
-  igraph_llist_int_t result_supp_list;
-
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_graph_list));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_vcolor_list));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_ecolor_list));
   IGRAPH_CHECK(igraph_llist_int_init(&result_supp_list));
 
   for (item_ptr = initial_patterns.first; item_ptr != NULL; item_ptr = item_ptr->next) {
-    pattern_dfscode = (igraph_dfscode_t *) item_ptr->data;
     IGRAPH_CHECK(igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
 		    min_supp, max_edges, variant, variant_data, &freq_vcolors, &freq_ecolors,
-		    pattern_dfscode, &result_graph_list,
+		    (igraph_dfscode_t *) item_ptr->data, &result_graph_list,
 		    &result_vcolor_list, &result_ecolor_list, &result_supp_list));
   }
 
@@ -1732,8 +1758,6 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   if (variant_data != NULL)
     igraph_free(variant_data);
 
-  igraph_vector_int_destroy(&vcolor_freq);
-  igraph_vector_int_destroy(&ecolor_freq);
   igraph_vector_int_destroy(&freq_vcolors);
   igraph_vector_int_destroy(&freq_ecolors);
 
