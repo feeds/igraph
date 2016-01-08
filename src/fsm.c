@@ -1409,6 +1409,119 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
   return 0;
 }
 
+
+int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ecolors,
+				 const igraph_vector_int_t *freq_vcolors,
+				 const igraph_vector_int_t *freq_ecolors,
+				 igraph_integer_t max_edges,
+				 igraph_gspan_variant_t variant,
+				 igraph_llist_ptr_t *initial_patterns) {
+  igraph_dfscode_t *pattern_dfscode;
+  igraph_dfscode_edge_t pattern_dfscode_edge;
+  long int i, j, k;
+
+  if (has_vcolors) {
+    if (variant == IGRAPH_GSPAN_LFRMINER) {
+      IGRAPH_ERROR("LFR-Miner only implemented for unlabelled nodes!", IGRAPH_EINVAL);
+    }
+    for (i = 0; VECTOR(*freq_vcolors)[i] != -1; i++) {
+      for (j = 0; j <= i && VECTOR(*freq_vcolors)[j] != -1; j++) {
+	if (has_ecolors) {
+	  if (variant == IGRAPH_GSPAN_GERM) {
+	    // create seed edge with all frequent vertex label pairs and edge timestamp 0
+	    // VC[i] -- 0 -- VC[j]
+	    pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	    pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+			      .l_i = VECTOR(*freq_vcolors)[i],
+			      .l_ij = 0,
+			      .l_j = VECTOR(*freq_vcolors)[j]};
+	    igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	    igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+	    igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+	  } else {
+	    for (k = 0; VECTOR(*freq_ecolors)[k] != -1; k++) {
+	      // VC[i] -- EC[k] -- VC[j]
+	      pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	      pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+				.l_i = VECTOR(*freq_vcolors)[i],
+				.l_ij = VECTOR(*freq_ecolors)[k],
+				.l_j = VECTOR(*freq_vcolors)[j]};
+	      igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	      igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+	      igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+	    }
+	  }
+	} else {
+	  // VC[i] -- VC[j]
+	  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+			    .l_i = VECTOR(*freq_vcolors)[i],
+			    .l_ij = 0,
+			    .l_j = VECTOR(*freq_vcolors)[j]};
+	  igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	  igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+	  igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+	}
+      }
+    }
+  } else {
+    if (has_ecolors) {
+      if (variant == IGRAPH_GSPAN_GERM) {
+	// NOTE: GERM currently only implemented for unlabelled edges!
+	//       Edge labels are interpreted as timestamps.
+	// The only seed edge to create is the one with timestamp 0
+	// v -- 0 -- v
+	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+			  .l_i = 0,
+			  .l_ij = 0,
+			  .l_j = 0};
+	igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+	igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
+	// NOTE: LFR-Miner currently only implemented for unlabelled nodes and edges!
+	//       Edge labels are interpreted as timestamps. Node labels mark s and e.
+	// The only seed edge to create is the edge between s (clr=0) and e (clr=1)
+	// s -- 0 -- e
+	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+			  .l_i = 0,
+			  .l_ij = 0,
+			  .l_j = 1};
+	igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+	igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+      } else {
+	for (k = 0; VECTOR(*freq_ecolors)[k] != -1; k++) {
+	  // v -- EC[k] -- v
+	  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+			    .l_i = 0,
+			    .l_ij = VECTOR(*freq_ecolors)[k],
+			    .l_j = 0};
+	  igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	  igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+	  igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+	}
+      }
+    } else {
+      // v -- v
+      pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+      pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+			.l_i = 0,
+			.l_ij = 0,
+			.l_j = 0};
+      igraph_i_dfscode_init(pattern_dfscode, max_edges);
+      igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+      igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+    }
+  }
+
+  return 0;
+}
+
+
 // public interface
 
 // assert: #graphs == #vertex_colors == #edge_colors
@@ -1426,7 +1539,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 		 igraph_vector_int_t *frequent_subgraph_supps) {
 
   long int graph_count = igraph_vector_ptr_size(graphs);
-  long int i, j, k, max_vcolor, max_ecolor, min_ecolor;
+  long int i, j, max_vcolor, max_ecolor, min_ecolor;
   igraph_vector_int_t vcolor_freq, ecolor_freq; // frequencies of all colors
   igraph_vector_int_t freq_ecolors, freq_vcolors; // lists of all frequent colors
   igraph_vector_int_t *vcolor, *ecolor;
@@ -1543,120 +1656,32 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   // BUILD ALL 1-EDGE GRAPHS AS SEEDS
 
-  igraph_dfscode_t *pattern_dfscode;
-  igraph_dfscode_edge_t pattern_dfscode_edge;
   igraph_llist_ptr_t initial_patterns;
-  igraph_llist_ptr_t result_graph_list, result_vcolor_list, result_ecolor_list;
-  igraph_llist_int_t result_supp_list;
-
   IGRAPH_CHECK(igraph_llist_ptr_init(&initial_patterns));
-  IGRAPH_CHECK(igraph_llist_ptr_init(&result_graph_list));
-  IGRAPH_CHECK(igraph_llist_ptr_init(&result_vcolor_list));
-  IGRAPH_CHECK(igraph_llist_ptr_init(&result_ecolor_list));
-  IGRAPH_CHECK(igraph_llist_int_init(&result_supp_list));
 
-  if (vertex_colors != NULL) {
-    if (variant == IGRAPH_GSPAN_LFRMINER) {
-      IGRAPH_ERROR("LFR-Miner only implemented for unlabelled nodes!", IGRAPH_EINVAL);
-    }
-    for (i = 0; VECTOR(freq_vcolors)[i] != -1; i++) {
-      for (j = 0; j <= i && VECTOR(freq_vcolors)[j] != -1; j++) {
-	if (edge_colors != NULL) {
-	  if (variant == IGRAPH_GSPAN_GERM) {
-	    // create seed edge with all frequent vertex label pairs and edge timestamp 0
-	    // VC[i] -- 0 -- VC[j]
-	    pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	    pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			      .l_i = VECTOR(freq_vcolors)[i],
-			      .l_ij = 0,
-			      .l_j = VECTOR(freq_vcolors)[j]};
-	    igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	    igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	    igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
-	  } else {
-	    for (k = 0; VECTOR(freq_ecolors)[k] != -1; k++) {
-	      // VC[i] -- EC[k] -- VC[j]
-	      pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	      pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-				.l_i = VECTOR(freq_vcolors)[i],
-				.l_ij = VECTOR(freq_ecolors)[k],
-				.l_j = VECTOR(freq_vcolors)[j]};
-	      igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	      igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	      igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
-	    }
-	  }
-	} else {
-	  // VC[i] -- VC[j]
-	  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			    .l_i = VECTOR(freq_vcolors)[i],
-			    .l_ij = 0,
-			    .l_j = VECTOR(freq_vcolors)[j]};
-	  igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	  igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	  igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
-	}
-      }
-    }
-  } else {
-    if (edge_colors != NULL) {
-      if (variant == IGRAPH_GSPAN_GERM) {
-	// NOTE: GERM currently only implemented for unlabelled edges!
-	//       Edge labels are interpreted as timestamps.
-	// The only seed edge to create is the one with timestamp 0
-	// v -- 0 -- v
-	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			  .l_i = 0,
-			  .l_ij = 0,
-			  .l_j = 0};
-	igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
-      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
-	// NOTE: LFR-Miner currently only implemented for unlabelled nodes and edges!
-	//       Edge labels are interpreted as timestamps. Node labels mark s and e.
-	// The only seed edge to create is the edge between s (clr=0) and e (clr=1)
-	// s -- 0 -- e
-	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			  .l_i = 0,
-			  .l_ij = 0,
-			  .l_j = 1};
-	igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
-      } else {
-	for (k = 0; VECTOR(freq_ecolors)[k] != -1; k++) {
-	  // v -- EC[k] -- v
-	  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			    .l_i = 0,
-			    .l_ij = VECTOR(freq_ecolors)[k],
-			    .l_j = 0};
-	  igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	  igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	  igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
-	}
-      }
-    } else {
-      // v -- v
-      pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-      pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			.l_i = 0,
-			.l_ij = 0,
-			.l_j = 0};
-      igraph_i_dfscode_init(pattern_dfscode, max_edges);
-      igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-      igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
-    }
+  switch (variant) {
+    case IGRAPH_GSPAN_GERM:
+    case IGRAPH_GSPAN_LFRMINER:
+    case IGRAPH_GSPAN_EVOMINE:
+    case IGRAPH_GSPAN_DEFAULT:
+    default:
+      IGRAPH_CHECK(igraph_i_build_seeds_default((vertex_colors != NULL), (edge_colors != NULL),
+		      &freq_vcolors, &freq_ecolors, max_edges, variant,
+		      &initial_patterns));
+      break;
   }
 
   // RECURSIVELY EXPAND ALL FREQUENT 1-EDGE GRAPHS BY PATTERN GROWTH
 
+  igraph_dfscode_t *pattern_dfscode;
   igraph_llist_item_ptr_t *item_ptr;
-  igraph_llist_item_int_t *item_int;
+  igraph_llist_ptr_t result_graph_list, result_vcolor_list, result_ecolor_list;
+  igraph_llist_int_t result_supp_list;
+
+  IGRAPH_CHECK(igraph_llist_ptr_init(&result_graph_list));
+  IGRAPH_CHECK(igraph_llist_ptr_init(&result_vcolor_list));
+  IGRAPH_CHECK(igraph_llist_ptr_init(&result_ecolor_list));
+  IGRAPH_CHECK(igraph_llist_int_init(&result_supp_list));
 
   for (item_ptr = initial_patterns.first; item_ptr != NULL; item_ptr = item_ptr->next) {
     pattern_dfscode = (igraph_dfscode_t *) item_ptr->data;
@@ -1668,43 +1693,21 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   // PREPARE RESULT SET
 
-  // count patterns in result list
-  long int pattern_count = 0;
-  for (item_ptr = result_graph_list.first; item_ptr != NULL; item_ptr = item_ptr->next)
-    pattern_count += 1;
-
   // store result in the provided containers (if provided...)
   // the user has to free the allocated memory
-  if (frequent_subgraphs != NULL) {
-    igraph_vector_ptr_resize(frequent_subgraphs, pattern_count);
-    for (item_ptr = result_graph_list.first, i = 0; item_ptr != NULL;
-	item_ptr = item_ptr->next, i++)
-      VECTOR(*frequent_subgraphs)[i] = item_ptr->data;
-  }
-  if (frequent_subgraph_vcolors != NULL) {
-    igraph_vector_ptr_resize(frequent_subgraph_vcolors, pattern_count);
-    for (item_ptr = result_vcolor_list.first, i = 0; item_ptr != NULL;
-	item_ptr = item_ptr->next, i++)
-      VECTOR(*frequent_subgraph_vcolors)[i] = item_ptr->data;
-  }
-  if (frequent_subgraph_ecolors != NULL) {
-    igraph_vector_ptr_resize(frequent_subgraph_ecolors, pattern_count);
-    for (item_ptr = result_ecolor_list.first, i = 0; item_ptr != NULL;
-	item_ptr = item_ptr->next, i++)
-      VECTOR(*frequent_subgraph_ecolors)[i] = item_ptr->data;
-  }
-  if (frequent_subgraph_supps != NULL) {
-    igraph_vector_int_resize(frequent_subgraph_supps, pattern_count);
-    for (item_int = result_supp_list.first, i = 0; item_int != NULL;
-	item_int = item_int->next, i++)
-      VECTOR(*frequent_subgraph_supps)[i] = item_int->data;
-  }
+  if (frequent_subgraphs != NULL)
+    igraph_llist_ptr_to_vector(&result_graph_list, frequent_subgraphs);
+  if (frequent_subgraph_vcolors != NULL)
+    igraph_llist_ptr_to_vector(&result_vcolor_list, frequent_subgraph_vcolors);
+  if (frequent_subgraph_ecolors != NULL)
+    igraph_llist_ptr_to_vector(&result_ecolor_list, frequent_subgraph_ecolors);
+  if (frequent_subgraph_supps != NULL)
+    igraph_llist_int_to_vector(&result_supp_list, frequent_subgraph_supps);
 
   // CLEAN UP
 
-  if (variant_data != NULL) {
+  if (variant_data != NULL)
     igraph_free(variant_data);
-  }
 
   igraph_vector_int_destroy(&vcolor_freq);
   igraph_vector_int_destroy(&ecolor_freq);
@@ -1740,6 +1743,8 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   igraph_llist_ptr_destroy(&result_graph_list);
   igraph_llist_ptr_destroy(&result_vcolor_list);
   igraph_llist_ptr_destroy(&result_ecolor_list);
+
+  // STATISTICS
 
   printf("\nGSPAN STATISTICS\n"
 	  "total subisomorphism checks: %ld\n"
