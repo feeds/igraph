@@ -43,8 +43,9 @@ __BEGIN_DECLS
 
 typedef enum igraph_gspan_variant_t {
   IGRAPH_GSPAN_DEFAULT,
+  IGRAPH_GSPAN_EVOMINE,
   IGRAPH_GSPAN_GERM,
-  IGRAPH_GSPAN_EVOMINE
+  IGRAPH_GSPAN_LFRMINER
 } igraph_gspan_variant_t;
 
 // O(1) access to in- and out-neighbors and degrees
@@ -127,6 +128,18 @@ int igraph_mib_support(const igraph_t *graph1,
 		       void *variant_data,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp);
+
+int igraph_egobased_support(const igraph_t *graph1,
+			   const igraph_t *graph2,
+			   const igraph_vector_int_t *vertex_color1,
+			   const igraph_vector_int_t *vertex_color2,
+			   const igraph_vector_int_t *edge_color1,
+			   const igraph_vector_int_t *edge_color2,
+			   igraph_bool_t induced,
+			   igraph_gspan_variant_t variant,
+			   void *variant_data,
+			   igraph_integer_t *support,
+			   igraph_integer_t min_supp);
 
 // Graph database support measures
 

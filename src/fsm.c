@@ -50,6 +50,7 @@ static long int igraph_fsm_stats_mibsupport_count = 0;
 static long int igraph_fsm_stats_mibsupport_subiso_success_count = 0;
 static long int igraph_fsm_stats_mibsupport_subiso_fail_count = 0;
 static long int igraph_fsm_stats_shallowsuppport_count = 0;
+static long int igraph_fsm_stats_egobasedsuppport_count = 0;
 static long int igraph_fsm_stats_noncanonical_count = 0;
 static long int igraph_fsm_stats_infrequent_count = 0;
 static long int igraph_fsm_stats_frequent_count = 0;
@@ -131,7 +132,6 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   long int i, j, fixed_count, partial_solution_pos, pred;
   long int pattern_node, other_pattern_node, target_node, other_target_node;
   long int indeg1, indeg2, outdeg1, outdeg2, max_deg;
-  long int germ_delta = 0;
   igraph_integer_t eid1, eid2;
   int end, success;
   igraph_vector_t node_ordering;
@@ -143,13 +143,17 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   igraph_stack_t dfs_pred_stack;
   igraph_bool_t directed;
 
+  // data for different variants
+  long int germ_delta = 0;
+  long int lfrminer_se_timestamp = 0;
+
   *iso = 0;
   end = 0;
   success = 1;
   directed = igraph_is_directed(graph1);
 
-  if ((variant == IGRAPH_GSPAN_GERM) && directed) {
-    IGRAPH_ERROR("directed subisomorphisms in GERM mode not implemented", IGRAPH_UNIMPLEMENTED);
+  if ((variant == IGRAPH_GSPAN_GERM || variant == IGRAPH_GSPAN_LFRMINER) && directed) {
+    IGRAPH_ERROR("directed edges not implemented in GERM/LFRMiner mode", IGRAPH_UNIMPLEMENTED);
   }
 
   // STEP 0: create a static ordering of the pattern nodes by DFS
@@ -192,12 +196,29 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
     // add neighbors to stack
     // TODO: in the order specified by RI's scoring functions
-    // TODO: low frequency edge labels (in target graph) as early as possible
     for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
-      if (VECTOR(visited)[NEIGHBOR(*graph2, pattern_node, j)] == 1)
+      if (VECTOR(visited)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
         continue;
+      }
+      if ((variant == IGRAPH_GSPAN_LFRMINER)
+	    && VECTOR(*vertex_color2)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
+	// only the e node has label 1, and it is treated specially (see below)
+	continue;
+      }
       IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
       IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
+    }
+
+    if ((variant == IGRAPH_GSPAN_LFRMINER) && (i == 0)) {
+      // we just added the s node at the first position of the DFS node ordering,
+      // the next node must be the e node (which is a neighbor). put in on top of the stack.
+      for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
+	if (VECTOR(*vertex_color2)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
+	  IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
+	  IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
+	  break;
+	}
+      }
     }
 
     VECTOR(visited)[pattern_node] = 1;
@@ -307,7 +328,6 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       }
 
       // check edges to already matched nodes
-      // TODO: we might be able to speed this up with NEIGH_TO_EID or the like
       for (i = 0; success && i < partial_solution_pos; i++) {
 	other_pattern_node = VECTOR(node_ordering)[i];
 	other_target_node = VECTOR(state_target_node)[i];
@@ -319,7 +339,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	    success = 0;
 	  } else {
 	    if (variant == IGRAPH_GSPAN_GERM) {
-	      // edge colors (== timestamps) do not have to match exactly, but with
+	      // edge timestamps (=colors) do not have to match exactly, but with
 	      // a fixed time gap that is determined by the first matched edge
 	      if (edge_color1 && (i == 0) && (partial_solution_pos == 1)) {
 		// this is the first edge we are matching, store the time gap
@@ -333,7 +353,17 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 		    VECTOR(*edge_color2)[(long int)eid2] + germ_delta)) {
 		success = 0;
 	      }
-	    } else {
+	    } else if (variant == IGRAPH_GSPAN_LFRMINER) {
+	      // edge timestamps (=colors) do not have to match exactly, they only
+	      // have to be smaller than the timestamp of the (s, e) edge
+	      if (edge_color1 && (i == 0) && (partial_solution_pos == 1)) {
+		// this is the (s,e) edge! store edge timestamp
+		lfrminer_se_timestamp = VECTOR(*edge_color1)[(long int)eid1];
+	      } else if (edge_color1 && (VECTOR(*edge_color1)[(long int)eid1]
+		    >= lfrminer_se_timestamp)) {
+		success = 0;
+	      }
+	    } else { // all other gSpan variants
 	      if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
 		    VECTOR(*edge_color2)[(long int)eid2])) {
 		success = 0;
@@ -366,7 +396,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	    }
 	  }
 	}
-      } // for i (other fixed nodes)
+      } // for i (other matched nodes)
 
       if (success) {
 	// partial solution is consistent
@@ -551,6 +581,57 @@ int igraph_mib_support(const igraph_t *graph1,
 
 
 // graph1 is the larger graph, graph2 is the smaller graph
+//
+// NOTE: Only use this in conjunction with IGRAPH_GSPAN_LFRMINER!
+// The code assumes graph2 contains a single node with color 0 (start node),
+// a single node with color 1 (end node), and all other nodes should have color 2.
+// graph1 should have no node labels, and edge labels that encode timestamps.
+int igraph_egobased_support(const igraph_t *graph1,
+			   const igraph_t *graph2,
+			   const igraph_vector_int_t *vertex_color1,
+			   const igraph_vector_int_t *vertex_color2,
+			   const igraph_vector_int_t *edge_color1,
+			   const igraph_vector_int_t *edge_color2,
+			   igraph_bool_t induced,
+			   igraph_gspan_variant_t variant,
+			   void *variant_data,
+			   igraph_integer_t *support,
+			   igraph_integer_t min_supp) {
+  long int i;
+  igraph_vector_t fixed;
+  igraph_bool_t iso;
+
+  IGRAPH_CHECK(igraph_vector_init(&fixed, 2));
+
+  // determine start node in graph2 (node label 0)
+  for (i = 0; i < igraph_vcount(graph2); i++) {
+    if (VECTOR(*vertex_color2)[i] == 0) {
+      VECTOR(fixed)[0] = i;
+      break;
+    }
+  }
+
+  // check for all possible target nodes whether they can be used as
+  // a start node for the pattern in graph2
+  *support = 0;
+  for (i = 0; i < igraph_vcount(graph1); i++) {
+    VECTOR(fixed)[1] = i;
+    if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
+		  edge_color1, edge_color2, induced, variant, variant_data,
+		  &fixed, &iso)) {
+      return 1;
+    }
+    if (iso) {
+      *support = *support + 1;
+    }
+  }
+
+  igraph_fsm_stats_egobasedsuppport_count++;
+  return 0;
+}
+
+
+// graph1 is the larger graph, graph2 is the smaller graph
 int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_t *graph2,
 			   const igraph_vector_int_t *vertex_color1,
@@ -606,7 +687,7 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
 	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
 			      (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
-			      NULL, NULL, /*induced=*/ 0, variant, variant_data,
+			      NULL, pattern_ecolors, /*induced=*/ 0, variant, variant_data,
 			      &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
@@ -614,15 +695,18 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
   } else {
     if (edge_colors != NULL) {
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
-	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern, NULL, NULL,
+	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
+			      NULL, pattern_vcolors,
 			      (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
 			      /*induced=*/ 0, variant, variant_data, &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
     } else {
       for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
-	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern, NULL, NULL,
-			      NULL, NULL, /*induced=*/ 0, variant, variant_data,
+	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
+			      NULL, pattern_vcolors,
+			      NULL, pattern_ecolors,
+			      /*induced=*/ 0, variant, variant_data,
 			      &gsupp, /*min_supp=*/ 0);
 	*support += gsupp;
       }
@@ -1093,6 +1177,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		  seed_vcolors, seed_ecolors, /*induced=*/ 0, variant, variant_data,
 		  single_graph_support,
 		  &seed_supp, min_supp);
+  printf("   %ld\n", (long int) seed_supp);
   if (seed_supp < min_supp) {
     // infrequent seed, free memory and prune
     igraph_destroy(seed_graph);
@@ -1208,6 +1293,16 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 				    result_ecolor_list, result_supp_list);
 	    igraph_i_dfscode_pop_back(seed_dfscode);
 	  }
+	} else if (variant == IGRAPH_GSPAN_LFRMINER) {
+	  // extend with edge to new standard node (label 2)
+	  new_edge.l_j = 2;
+	  igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
+	  igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+			    min_supp, max_edges, variant, variant_data,
+			    freq_vcolors, freq_ecolors,
+			    seed_dfscode, result_graph_list, result_vcolor_list,
+			    result_ecolor_list, result_supp_list);
+	  igraph_i_dfscode_pop_back(seed_dfscode);
 	} else {
 	  // extend with all frequent edge colors
 	  for (i = 0; VECTOR(*freq_ecolors)[i] != -1; i++) {
@@ -1265,6 +1360,15 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 				  result_ecolor_list, result_supp_list);
 	  igraph_i_dfscode_pop_back(seed_dfscode);
 	}
+      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
+	// add simple (unlabelled) backward edge
+	igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
+	igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+				min_supp, max_edges, variant, variant_data,
+				freq_vcolors, freq_ecolors,
+				seed_dfscode, result_graph_list, result_vcolor_list,
+				result_ecolor_list, result_supp_list);
+	igraph_i_dfscode_pop_back(seed_dfscode);
       } else {
 	for (i = 0; VECTOR(*freq_ecolors)[i] != -1; i++) {
 	  new_edge.l_ij = VECTOR(*freq_ecolors)[i];
@@ -1319,6 +1423,11 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   // INITIALIZE DIFFERENT VARIANTS OF GSPAN
 
   switch (variant) {
+    case IGRAPH_GSPAN_EVOMINE:
+      // EvoMine needs the maximum node and edge color to determine which label
+      // strings are dynamic. Unused right now.
+      variant_data = igraph_Calloc(2, long int);
+      break;
     case IGRAPH_GSPAN_GERM:
       if (edge_colors == NULL) {
 	IGRAPH_ERROR("GERM needs edge labels that encode timestamps, but no edge labels specified",
@@ -1328,10 +1437,9 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
       // for the extension operation
       variant_data = igraph_Calloc(1, long int);
       break;
-    case IGRAPH_GSPAN_EVOMINE:
-      // EvoMine needs the maximum node and edge color to determine label strings
-      variant_data = igraph_Calloc(2, long int);
-      break;
+    case IGRAPH_GSPAN_LFRMINER:
+      // TODO: Store edge timestamps in variant_data, so that we can use ecolors for
+      //       actual edge lables. Same can be done for GERM.
     case IGRAPH_GSPAN_DEFAULT:
     default:
       variant_data = NULL;
@@ -1435,6 +1543,9 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   IGRAPH_CHECK(igraph_llist_int_init(&result_supp_list));
 
   if (vertex_colors != NULL) {
+    if (variant == IGRAPH_GSPAN_LFRMINER) {
+      IGRAPH_ERROR("LFR-Miner only implemented for unlabelled nodes!", IGRAPH_EINVAL);
+    }
     for (i = 0; VECTOR(freq_vcolors)[i] != -1; i++) {
       for (j = 0; j <= i && VECTOR(freq_vcolors)[j] != -1; j++) {
 	if (edge_colors != NULL) {
@@ -1478,8 +1589,10 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   } else {
     if (edge_colors != NULL) {
       if (variant == IGRAPH_GSPAN_GERM) {
-	// the only seed edge to create is the one with timestamp 0
-	// O -- 0 -- O
+	// NOTE: GERM currently only implemented for unlabelled edges!
+	//       Edge labels are interpreted as timestamps.
+	// The only seed edge to create is the one with timestamp 0
+	// v -- 0 -- v
 	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
 	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
 			  .l_i = 0,
@@ -1488,9 +1601,22 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	igraph_i_dfscode_init(pattern_dfscode, max_edges);
 	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
 	igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
+      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
+	// NOTE: LFR-Miner currently only implemented for unlabelled nodes and edges!
+	//       Edge labels are interpreted as timestamps. Node labels mark s and e.
+	// The only seed edge to create is the edge between s (clr=0) and e (clr=1)
+	// s -- 0 -- e
+	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+			  .l_i = 0,
+			  .l_ij = 0,
+			  .l_j = 1};
+	igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+	igraph_llist_ptr_push_back(&initial_patterns, pattern_dfscode);
       } else {
 	for (k = 0; VECTOR(freq_ecolors)[k] != -1; k++) {
-	  // O -- EC[k] -- O
+	  // v -- EC[k] -- v
 	  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
 	  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
 			    .l_i = 0,
@@ -1502,7 +1628,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	}
       }
     } else {
-      // O -- O
+      // v -- v
       pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
       pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
 			.l_i = 0,
@@ -1612,6 +1738,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  "      MIB failed subisomorphism checks: %ld\n"
 	  "         Sum: %ld\n"
 	  "   Shallow support computations: %ld\n"
+	  "   Ego-based support computations: %ld\n"
 	  "Infrequent pattern candidates: %ld\n"
 	  "Frequent patterns: %ld\n"
 	  "Non-canonical pattern candidates: %ld\n",
@@ -1625,6 +1752,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  (igraph_fsm_stats_mibsupport_subiso_success_count
 		+ igraph_fsm_stats_mibsupport_subiso_fail_count),
 	  igraph_fsm_stats_shallowsuppport_count,
+	  igraph_fsm_stats_egobasedsuppport_count,
 	  igraph_fsm_stats_infrequent_count,
 	  igraph_fsm_stats_frequent_count,
 	  igraph_fsm_stats_noncanonical_count);
