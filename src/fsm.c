@@ -774,6 +774,14 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		igraph_dfscode_t *seed_dfscode, igraph_llist_ptr_t *result_graph_list,
 		igraph_llist_ptr_t *result_vcolor_list, igraph_llist_ptr_t *result_ecolor_list,
 		igraph_llist_int_t *result_supp_list);
+int igraph_i_minmax_colors(const igraph_vector_ptr_t *vertex_colors,
+		       const igraph_vector_ptr_t *edge_colors,
+		       long int *max_vcolor, long int *max_ecolor,
+		       long int *min_vcolor, long int *min_ecolor);
+int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
+		const igraph_vector_ptr_t *edge_colors, long int min_supp,
+		long int max_vcolor, long int max_ecolor,
+		igraph_vector_int_t *freq_vcolors, igraph_vector_int_t *freq_ecolors);
 
 int igraph_i_dfscode_init(igraph_dfscode_t *dfscode, long int max_edges) {
   dfscode->stor_begin = igraph_Calloc(max_edges, igraph_dfscode_edge_t);
