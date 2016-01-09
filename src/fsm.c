@@ -59,6 +59,7 @@ static long int igraph_fsm_stats_egobasedsuppport_count = 0;
 static long int igraph_fsm_stats_noncanonical_count = 0;
 static long int igraph_fsm_stats_infrequent_count = 0;
 static long int igraph_fsm_stats_frequent_count = 0;
+static long int igraph_fsm_stats_lfrminer_invalid_count = 0;
 
 
 // ------------- HELPER FUNCTIONS -------------
@@ -647,6 +648,12 @@ int igraph_egobased_support(const igraph_t *graph1,
     if (iso) {
       *support = *support + 1;
     }
+
+    // early pruning
+    if ((*support+igraph_vcount(graph1)-i-1) < min_supp) {
+      // support cannot become larger than min_supp anymore
+      return 0;
+    }
   }
 
   igraph_fsm_stats_egobasedsuppport_count++;
@@ -767,6 +774,7 @@ int igraph_i_dfscode_push_back(igraph_dfscode_t *dfscode, const igraph_dfscode_e
 igraph_dfscode_edge_t igraph_i_dfscode_pop_back(igraph_dfscode_t *dfscode);
 int igraph_i_dfscode_edge_compare(const igraph_dfscode_edge_t *a, const igraph_dfscode_edge_t *b);
 int igraph_i_dfscode_compare(const igraph_dfscode_t *a, const igraph_dfscode_t *b);
+igraph_bool_t igraph_i_dfscode_contains_edge(igraph_dfscode_t *dfscode, long int v1, long int v2);
 int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors);
 igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igraph_t *graph,
@@ -932,6 +940,19 @@ int igraph_i_dfscode_compare(const igraph_dfscode_t *a, const igraph_dfscode_t *
   }
   return 1; // a > b
 }
+
+
+igraph_bool_t igraph_i_dfscode_contains_edge(igraph_dfscode_t *dfscode, long int v1, long int v2) {
+  long int i;
+  for (i = 0; i <= dfscode->last_edge; i++) {
+    if (((VECTOR(*dfscode)[i].i == v1) && (VECTOR(*dfscode)[i].j == v2))
+	|| ((VECTOR(*dfscode)[i].i == v2) && (VECTOR(*dfscode)[i].j == v1))) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 
 int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors) {
@@ -1231,6 +1252,20 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     igraph_free(seed_ecolors);
     igraph_fsm_stats_infrequent_count++;
     return 0;
+  } else if ((variant == IGRAPH_GSPAN_LFRMINER)
+	  && ((DEGREE(*seed_graph, 0) != igraph_vcount(seed_graph)-1)
+	    || (DEGREE(*seed_graph, 1) != igraph_vcount(seed_graph)-1))) {
+    // LFR-Miner mode: pattern is frequent but invalid, since not all nodes are connected
+    // to start node 0 and end node 1. It can, however, be extended to a valid pattern.
+    // Hence, free memory, don't add it to the result, but continue processing.
+    igraph_destroy(seed_graph);
+    igraph_vector_int_destroy(seed_vcolors);
+    igraph_vector_int_destroy(seed_ecolors);
+    igraph_free(seed_graph);
+    igraph_free(seed_vcolors);
+    igraph_free(seed_ecolors);
+    igraph_fsm_stats_lfrminer_invalid_count++;
+    igraph_fsm_stats_frequent_count++;
   } else {
     // frequent seed, add to result
     igraph_llist_ptr_push_back(result_graph_list, seed_graph);
@@ -1285,6 +1320,23 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 					.l_i = cur_color, .l_ij = 0, .l_j = 0};
     switch(variant) {
       case IGRAPH_GSPAN_LFRMINER:
+	// TODO: augment variant_data with STRICT flag to turn on/off connectivity constraints
+	// enforce additional connectivity constraints to avoid invalid patterns
+	if ((cur_vertex == 0) && (rightmost_vertex >= 1)) {
+	  break;
+	}
+	if (cur_vertex >= 1) {
+	  for (i = 2; i <= rightmost_vertex; i++) {
+	    if (!(igraph_i_dfscode_contains_edge(seed_dfscode, i, 0)
+		    && igraph_i_dfscode_contains_edge(seed_dfscode, i, 1))) {
+	      break;
+	    }
+	  }
+	  if (i <= rightmost_vertex) {
+	    break;
+	  }
+	}
+
 	// extend with edge to new standard node (label 2)
 	new_edge.l_j = 2;
 	igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
@@ -1428,6 +1480,15 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 	  break;
 
       case IGRAPH_GSPAN_LFRMINER:
+	  // TODO: augment variant_data with STRICT flag to turn on/off connectivity constraints
+	  // enforce additional connectivity constraint to avoid invalid patterns
+	  if (cur_vertex >= 2) {
+	    if (!(igraph_i_dfscode_contains_edge(seed_dfscode, rightmost_vertex, 0)
+		  && igraph_i_dfscode_contains_edge(seed_dfscode, rightmost_vertex, 1))) {
+	      break;
+	    }
+	  }
+
 	  // extend with unlabelled edge
 	  igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
 	  igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
@@ -1911,6 +1972,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  "   Ego-based support computations: %ld\n"
 	  "Infrequent pattern candidates: %ld\n"
 	  "Frequent patterns: %ld\n"
+	  "Invalid but intermediate LF patterns: %ld\n"
 	  "Non-canonical pattern candidates: %ld\n",
 	  igraph_fsm_stats_subiso_success_count+igraph_fsm_stats_subiso_fail_count,
 	  igraph_fsm_stats_subiso_success_count,
@@ -1930,6 +1992,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  igraph_fsm_stats_egobasedsuppport_count,
 	  igraph_fsm_stats_infrequent_count,
 	  igraph_fsm_stats_frequent_count,
+	  igraph_fsm_stats_lfrminer_invalid_count,
 	  igraph_fsm_stats_noncanonical_count);
 
   return 0;
