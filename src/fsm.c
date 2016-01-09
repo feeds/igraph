@@ -47,6 +47,9 @@ static long int igraph_fsm_stats_subiso_success_count = 0;
 static long int igraph_fsm_stats_subiso_fail_count = 0;
 static long int igraph_fsm_stats_subiso_failed_edge_existence_count = 0;
 static long int igraph_fsm_stats_subiso_failed_edge_color_count = 0;
+static long int igraph_fsm_stats_subiso_failed_node_duplicate_count = 0;
+static long int igraph_fsm_stats_subiso_failed_node_degree_count = 0;
+static long int igraph_fsm_stats_subiso_failed_node_color_count = 0;
 static long int igraph_fsm_stats_aggregated_support_count = 0;
 static long int igraph_fsm_stats_mibsupport_count = 0;
 static long int igraph_fsm_stats_mibsupport_subiso_success_count = 0;
@@ -254,6 +257,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     if (vertex_color1 && (VECTOR(*vertex_color1)[target_node]
 			    != VECTOR(*vertex_color2)[pattern_node])) {
       end = 1;
+      igraph_fsm_stats_subiso_failed_node_color_count++;
     }
 
     // check degree
@@ -265,10 +269,12 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       if (directed) {
 	if ((indeg1 < indeg2) || (outdeg1 < outdeg2)) {
 	  end = 1;
+	  igraph_fsm_stats_subiso_failed_node_degree_count++;
 	}
       } else {
 	if (indeg1+outdeg1 < indeg2+outdeg2) {
 	  end = 1;
+	  igraph_fsm_stats_subiso_failed_node_degree_count++;
 	}
       }
     }
@@ -304,6 +310,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       if (vertex_color1 && (VECTOR(*vertex_color1)[target_node]
 			      != VECTOR(*vertex_color2)[pattern_node])) {
 	success = 0;
+	igraph_fsm_stats_subiso_failed_node_color_count++;
       }
 
       // check whether target node has been matched before
@@ -311,6 +318,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	other_target_node = (long int) VECTOR(state_target_node)[i];
 	if (other_target_node == target_node) {
 	  success = 0;
+	  igraph_fsm_stats_subiso_failed_node_duplicate_count++;
 	}
       }
 
@@ -323,10 +331,12 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	if (directed) {
 	  if ((indeg1 < indeg2) || (outdeg1 < outdeg2)) {
 	    success = 0;
+	    igraph_fsm_stats_subiso_failed_node_degree_count++;
 	  }
 	} else {
 	  if (indeg1+outdeg1 < indeg2+outdeg2) {
 	    success = 0;
+	    igraph_fsm_stats_subiso_failed_node_degree_count++;
 	  }
 	}
       }
@@ -336,9 +346,9 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	other_pattern_node = VECTOR(node_ordering)[i];
 	other_target_node = VECTOR(state_target_node)[i];
 
-	igraph_get_eid(graph2, &eid2, other_pattern_node, pattern_node, 1, 0);
+	igraph_get_eid(graph2, &eid2, other_pattern_node, pattern_node, /*directed*/1, /*err*/0);
 	if (eid2 > -1) {
-	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, 1, 0);
+	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, /*directed*/1, /*err*/0);
 	  if (eid1 == -1) {
 	    success = 0;
 	    igraph_fsm_stats_subiso_failed_edge_existence_count++;
@@ -380,7 +390,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	    }
 	  }
 	} else if (induced) {
-	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, 1, 0);
+	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, /*directed*/1, /*err*/0);
 	  if (eid1 > -1) {
 	    success = 0;
 	    igraph_fsm_stats_subiso_failed_edge_existence_count++;
@@ -388,9 +398,9 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	}
 
 	if (directed) {
-	  igraph_get_eid(graph2, &eid2, pattern_node, other_pattern_node, 1, 0);
+	  igraph_get_eid(graph2, &eid2, pattern_node, other_pattern_node, /*directed*/1, /*err*/0);
 	  if (eid2 > -1) {
-	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, 1, 0);
+	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, /*directed*/1, /*err*/0);
 	    if (eid1 == -1) {
 	      success = 0;
 	      igraph_fsm_stats_subiso_failed_edge_existence_count++;
@@ -402,7 +412,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	      }
 	    }
 	  } else if (induced) {
-	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, 1, 0);
+	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, /*directed*/1, /*err*/0);
 	    if (eid1 > -1) {
 	      success = 0;
 	      igraph_fsm_stats_subiso_failed_edge_existence_count++;
@@ -1889,6 +1899,9 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  "   failed: %ld\n"
 	  "   failed edge existence: %ld\n"
 	  "   failed edge color: %ld\n"
+	  "   failed node degree: %ld\n"
+	  "   failed node duplicate: %ld\n"
+	  "   failed node color: %ld\n"
 	  "DB support computations: %ld\n"
 	  "   MIB support computations: %ld\n"
 	  "   MIB subisomorphism checks: %ld\n"
@@ -1904,6 +1917,9 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  igraph_fsm_stats_subiso_fail_count,
 	  igraph_fsm_stats_subiso_failed_edge_existence_count,
 	  igraph_fsm_stats_subiso_failed_edge_color_count,
+	  igraph_fsm_stats_subiso_failed_node_degree_count,
+	  igraph_fsm_stats_subiso_failed_node_duplicate_count,
+	  igraph_fsm_stats_subiso_failed_node_color_count,
 	  igraph_fsm_stats_aggregated_support_count,
 	  igraph_fsm_stats_mibsupport_count,
 	  (igraph_fsm_stats_mibsupport_subiso_success_count
