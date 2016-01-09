@@ -782,6 +782,18 @@ int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
 		const igraph_vector_ptr_t *edge_colors, long int min_supp,
 		long int max_vcolor, long int max_ecolor,
 		igraph_vector_int_t *freq_vcolors, igraph_vector_int_t *freq_ecolors);
+int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ecolors,
+				 const igraph_vector_int_t *freq_vcolors,
+				 const igraph_vector_int_t *freq_ecolors,
+				 igraph_integer_t max_edges,
+				 igraph_gspan_variant_t variant,
+				 igraph_llist_ptr_t *initial_patterns);
+int igraph_i_build_seeds_germ(igraph_bool_t has_vcolors,
+				 const igraph_vector_int_t *freq_vcolors,
+				 igraph_integer_t max_edges,
+				 igraph_llist_ptr_t *initial_patterns);
+int igraph_i_build_seeds_lfrminer(igraph_integer_t max_edges,
+				 igraph_llist_ptr_t *initial_patterns);
 
 int igraph_i_dfscode_init(igraph_dfscode_t *dfscode, long int max_edges) {
   dfscode->stor_begin = igraph_Calloc(max_edges, igraph_dfscode_edge_t);
@@ -1418,6 +1430,71 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 }
 
 
+// GERM is currently only implemented for unlabelled edges!
+// Edge labels are interpreted as timestamps.
+int igraph_i_build_seeds_germ(igraph_bool_t has_vcolors,
+				 const igraph_vector_int_t *freq_vcolors,
+				 igraph_integer_t max_edges,
+				 igraph_llist_ptr_t *initial_patterns) {
+  igraph_dfscode_t *pattern_dfscode;
+  igraph_dfscode_edge_t pattern_dfscode_edge;
+  long int i, j;
+
+  if (has_vcolors) {
+    for (i = 0; VECTOR(*freq_vcolors)[i] != -1; i++) {
+      for (j = 0; j <= i && VECTOR(*freq_vcolors)[j] != -1; j++) {
+	// create seed edge with all frequent vertex label pairs and edge timestamp 0
+	// VC[i] -- 0 -- VC[j]
+	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+		      .l_i = VECTOR(*freq_vcolors)[i],
+		      .l_ij = 0,
+		      .l_j = VECTOR(*freq_vcolors)[j]};
+	igraph_i_dfscode_init(pattern_dfscode, max_edges);
+	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+	igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+      }
+    }
+  } else {
+    // The only seed edge to create is the one with timestamp 0
+    // v -- 0 -- v
+    pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+    pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+		      .l_i = 0,
+		      .l_ij = 0,
+		      .l_j = 0};
+    igraph_i_dfscode_init(pattern_dfscode, max_edges);
+    igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+    igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+  }
+
+  return 0;
+}
+
+
+// LFR-Miner is currently only implemented for unlabelled nodes and edges!
+// Edge labels are interpreted as timestamps. Node labels mark s and e.
+// The only seed edge to create is the edge between s (clr=0) and e (clr=1):
+//      s -- 0 -- e
+// All other nodes created during extension will have the color 2.
+int igraph_i_build_seeds_lfrminer(igraph_integer_t max_edges,
+				 igraph_llist_ptr_t *initial_patterns) {
+  igraph_dfscode_t *pattern_dfscode;
+  igraph_dfscode_edge_t pattern_dfscode_edge;
+
+  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+		    .l_i = 0,
+		    .l_ij = 0,
+		    .l_j = 1};
+  igraph_i_dfscode_init(pattern_dfscode, max_edges);
+  igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+  igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
+
+  return 0;
+}
+
+
 int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ecolors,
 				 const igraph_vector_int_t *freq_vcolors,
 				 const igraph_vector_int_t *freq_ecolors,
@@ -1429,35 +1506,19 @@ int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ec
   long int i, j, k;
 
   if (has_vcolors) {
-    if (variant == IGRAPH_GSPAN_LFRMINER) {
-      IGRAPH_ERROR("LFR-Miner only implemented for unlabelled nodes!", IGRAPH_EINVAL);
-    }
     for (i = 0; VECTOR(*freq_vcolors)[i] != -1; i++) {
       for (j = 0; j <= i && VECTOR(*freq_vcolors)[j] != -1; j++) {
 	if (has_ecolors) {
-	  if (variant == IGRAPH_GSPAN_GERM) {
-	    // create seed edge with all frequent vertex label pairs and edge timestamp 0
-	    // VC[i] -- 0 -- VC[j]
+	  for (k = 0; VECTOR(*freq_ecolors)[k] != -1; k++) {
+	    // VC[i] -- EC[k] -- VC[j]
 	    pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
 	    pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			      .l_i = VECTOR(*freq_vcolors)[i],
-			      .l_ij = 0,
-			      .l_j = VECTOR(*freq_vcolors)[j]};
+			.l_i = VECTOR(*freq_vcolors)[i],
+			.l_ij = VECTOR(*freq_ecolors)[k],
+			.l_j = VECTOR(*freq_vcolors)[j]};
 	    igraph_i_dfscode_init(pattern_dfscode, max_edges);
 	    igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
 	    igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
-	  } else {
-	    for (k = 0; VECTOR(*freq_ecolors)[k] != -1; k++) {
-	      // VC[i] -- EC[k] -- VC[j]
-	      pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	      pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-				.l_i = VECTOR(*freq_vcolors)[i],
-				.l_ij = VECTOR(*freq_ecolors)[k],
-				.l_j = VECTOR(*freq_vcolors)[j]};
-	      igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	      igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	      igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
-	    }
 	  }
 	} else {
 	  // VC[i] -- VC[j]
@@ -1472,46 +1533,18 @@ int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ec
 	}
       }
     }
-  } else {
+  } else { // no vcolors
     if (has_ecolors) {
-      if (variant == IGRAPH_GSPAN_GERM) {
-	// NOTE: GERM currently only implemented for unlabelled edges!
-	//       Edge labels are interpreted as timestamps.
-	// The only seed edge to create is the one with timestamp 0
-	// v -- 0 -- v
+      for (k = 0; VECTOR(*freq_ecolors)[k] != -1; k++) {
+	// v -- EC[k] -- v
 	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
 	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
 			  .l_i = 0,
-			  .l_ij = 0,
+			  .l_ij = VECTOR(*freq_ecolors)[k],
 			  .l_j = 0};
 	igraph_i_dfscode_init(pattern_dfscode, max_edges);
 	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
 	igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
-      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
-	// NOTE: LFR-Miner currently only implemented for unlabelled nodes and edges!
-	//       Edge labels are interpreted as timestamps. Node labels mark s and e.
-	// The only seed edge to create is the edge between s (clr=0) and e (clr=1)
-	// s -- 0 -- e
-	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			  .l_i = 0,
-			  .l_ij = 0,
-			  .l_j = 1};
-	igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
-      } else {
-	for (k = 0; VECTOR(*freq_ecolors)[k] != -1; k++) {
-	  // v -- EC[k] -- v
-	  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-			    .l_i = 0,
-			    .l_ij = VECTOR(*freq_ecolors)[k],
-			    .l_j = 0};
-	  igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	  igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	  igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
-	}
       }
     } else {
       // v -- v
@@ -1677,6 +1710,10 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   switch (variant) {
     case IGRAPH_GSPAN_EVOMINE:
+      if (edge_colors == NULL) {
+	IGRAPH_ERROR("EvoMine needs edge labels that encode dynamics, but no edge labels specified",
+			  IGRAPH_EINVAL);
+      }
       // EvoMine needs the maximum node and edge color to determine which label
       // strings are dynamic. Unused right now.
       variant_data = igraph_Calloc(2, long int);
@@ -1691,8 +1728,13 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
       variant_data = igraph_Calloc(1, long int);
       break;
     case IGRAPH_GSPAN_LFRMINER:
+      if (edge_colors == NULL) {
+	IGRAPH_ERROR("LFR-Miner needs edge labels that encode timestamps, but no edge labels "
+			"specified", IGRAPH_EINVAL);
+      }
       // TODO: Store edge timestamps in variant_data, so that we can use ecolors for
       //       actual edge lables. Same can be done for GERM.
+      // no break here
     case IGRAPH_GSPAN_DEFAULT:
     default:
       variant_data = NULL;
@@ -1705,12 +1747,6 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   igraph_i_minmax_colors(vertex_colors, edge_colors, &max_vcolor, &max_ecolor,
 			&min_vcolor, &min_ecolor);
 
-  // determine frequent vertex and edge colors
-  igraph_vector_int_init(&freq_vcolors, 0);
-  igraph_vector_int_init(&freq_ecolors, 0);
-  igraph_i_frequent_colors(vertex_colors, edge_colors, min_supp, max_vcolor, max_ecolor,
-			&freq_vcolors, &freq_ecolors);
-
   if (variant == IGRAPH_GSPAN_GERM) {
     *(long int *)variant_data = max_ecolor-min_ecolor;
   } else if (variant == IGRAPH_GSPAN_EVOMINE) {
@@ -1718,13 +1754,24 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
     ((long int *)variant_data)[1] = max_ecolor;
   }
 
+  // determine frequent vertex and edge colors
+  igraph_vector_int_init(&freq_vcolors, 0);
+  igraph_vector_int_init(&freq_ecolors, 0);
+  igraph_i_frequent_colors(vertex_colors, edge_colors, min_supp, max_vcolor, max_ecolor,
+			&freq_vcolors, &freq_ecolors);
+
   // BUILD ALL 1-EDGE GRAPHS AS SEEDS
 
   IGRAPH_CHECK(igraph_llist_ptr_init(&initial_patterns));
 
   switch (variant) {
     case IGRAPH_GSPAN_GERM:
+      IGRAPH_CHECK(igraph_i_build_seeds_germ((vertex_colors != NULL), &freq_vcolors, max_edges,
+				    &initial_patterns));
+      break;
     case IGRAPH_GSPAN_LFRMINER:
+      IGRAPH_CHECK(igraph_i_build_seeds_lfrminer(max_edges, &initial_patterns));
+      break;
     case IGRAPH_GSPAN_EVOMINE:
     case IGRAPH_GSPAN_DEFAULT:
     default:
