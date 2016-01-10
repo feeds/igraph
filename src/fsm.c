@@ -774,6 +774,7 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 typedef struct igraph_dfscode_edge_t {
   long int i; // source node
   long int j; // target node
+  long int d; // direction, where 0 means e=(i,j) and 1 means e=(j,i)
   long int l_i; // source label
   long int l_ij; // edge label
   long int l_j; // target label
@@ -795,7 +796,8 @@ igraph_dfscode_edge_t igraph_i_dfscode_pop_back(igraph_dfscode_t *dfscode);
 int igraph_i_dfscode_edge_compare(const igraph_dfscode_edge_t *a, const igraph_dfscode_edge_t *b);
 int igraph_i_dfscode_compare(const igraph_dfscode_t *a, const igraph_dfscode_t *b);
 igraph_bool_t igraph_i_dfscode_contains_edge(igraph_dfscode_t *dfscode, long int v1, long int v2);
-int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_t *graph,
+int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_bool_t directed,
+		igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors);
 igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors);
@@ -857,7 +859,8 @@ void igraph_i_dfscode_destroy(igraph_dfscode_t *dfscode) {
 void igraph_i_dfscode_print(const igraph_dfscode_t *dfscode) {
   long int i;
   for (i = 0; i < dfscode->last_edge+1; i++) {
-    printf("(%ld, %ld, %ld, %ld, %ld) ", VECTOR(*dfscode)[i].i, VECTOR(*dfscode)[i].j,
+    printf("(%ld, %ld, %s, %ld, %ld, %ld) ", VECTOR(*dfscode)[i].i, VECTOR(*dfscode)[i].j,
+	((VECTOR(*dfscode)[i].d == 0) ? "->" : "<-"),
 	VECTOR(*dfscode)[i].l_i, VECTOR(*dfscode)[i].l_ij, VECTOR(*dfscode)[i].l_j);
   }
   printf("\n");
@@ -910,23 +913,29 @@ int igraph_i_dfscode_edge_compare(const igraph_dfscode_edge_t *a, const igraph_d
   }
 
   if (a->i == b->i && a->j == b->j) {
-    // second priority: label of node i
-    if (a->l_i < b->l_i) {
+    // second priority: direction of edge
+    if (a->d < b->d) {
       return -1; // a < b
     }
-    if (a->l_i == b->l_j) {
-      // third priority: label of edge (i,j)
-      if (a->l_ij < b->l_ij) {
+    if (a->d == b->d) {
+      // third priority: label of node i
+      if (a->l_i < b->l_i) {
 	return -1; // a < b
       }
-      if (a->l_ij == b->l_ij) {
-	// fourth priority: label of node j
-	if (a->l_j < b->l_j) {
+      if (a->l_i == b->l_j) {
+	// fourth priority: label of edge (i,j)
+	if (a->l_ij < b->l_ij) {
 	  return -1; // a < b
 	}
-	if (a->l_j == b->l_j) {
-	  // all entries are equal
-	  return 0; // a == b
+	if (a->l_ij == b->l_ij) {
+	  // fifth priority: label of node j
+	  if (a->l_j < b->l_j) {
+	    return -1; // a < b
+	  }
+	  if (a->l_j == b->l_j) {
+	    // all entries are equal
+	    return 0; // a == b
+	  }
 	}
       }
     }
@@ -974,7 +983,8 @@ igraph_bool_t igraph_i_dfscode_contains_edge(igraph_dfscode_t *dfscode, long int
 }
 
 
-int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_t *graph,
+int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_bool_t directed,
+		igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors) {
   igraph_vector_t edges;
   long int i;
@@ -983,14 +993,20 @@ int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_t *graph,
 			      ? VECTOR(*dfscode)[dfscode->last_edge].j
 			      : VECTOR(*dfscode)[dfscode->last_edge].i);
 
-  IGRAPH_CHECK(igraph_empty(graph, rightmost_vertex+1, IGRAPH_UNDIRECTED));
+  IGRAPH_CHECK(igraph_empty(graph, rightmost_vertex+1,
+		    (directed ? IGRAPH_DIRECTED : IGRAPH_UNDIRECTED)));
   IGRAPH_CHECK(igraph_vector_int_init(vertex_colors, rightmost_vertex+1));
   IGRAPH_CHECK(igraph_vector_int_init(edge_colors, igraph_i_dfscode_size(dfscode)));
   IGRAPH_CHECK(igraph_vector_init(&edges, 2*igraph_i_dfscode_size(dfscode)));
 
   for (i = 0; i < igraph_i_dfscode_size(dfscode); i++) {
-    VECTOR(edges)[2*i] = VECTOR(*dfscode)[i].i;
-    VECTOR(edges)[2*i+1] = VECTOR(*dfscode)[i].j;
+    if (VECTOR(*dfscode)[i].d == 0) {
+      VECTOR(edges)[2*i] = VECTOR(*dfscode)[i].i;
+      VECTOR(edges)[2*i+1] = VECTOR(*dfscode)[i].j;
+    } else {
+      VECTOR(edges)[2*i] = VECTOR(*dfscode)[i].j;
+      VECTOR(edges)[2*i+1] = VECTOR(*dfscode)[i].i;
+    }
     VECTOR(*edge_colors)[i] = VECTOR(*dfscode)[i].l_ij;
     VECTOR(*vertex_colors)[VECTOR(*dfscode)[i].i] = VECTOR(*dfscode)[i].l_i;
     VECTOR(*vertex_colors)[VECTOR(*dfscode)[i].j] = VECTOR(*dfscode)[i].l_j;
@@ -1008,7 +1024,6 @@ int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_t *graph,
 // can terminate.
 // Original paper says: almost the same as enumerating all automorphisms, but taking
 // advantage of the prefix property for pruning.
-// TODO: only works for undirected graphs!!!
 igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors) {
   long int root;
@@ -1079,7 +1094,9 @@ igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode,
   int cmp;
   igraph_dfscode_edge_t new_edge;
   igraph_integer_t eid;
-  igraph_bool_t is_less_eq;
+  igraph_bool_t is_less_eq, is_outneigh, directed;
+
+  directed = igraph_is_directed(graph);
 
   if (ordering_pos == igraph_vector_int_size(ordering)-1) {
     // DFS ordering is complete (no extension possible) and we have
@@ -1113,6 +1130,10 @@ igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode,
     // than the one from dfscode
 
     new_edge = (igraph_dfscode_edge_t) {.i = ext_node_pos, .j = ordering_pos+1};
+    if (directed) {
+      is_outneigh = (i < OUT_DEGREE(*graph, ext_node));
+      new_edge.d = !is_outneigh; // 0 if e=(ext_node,neigh), 1 if e=(neigh,ext_node)
+    }
     if (vertex_colors) {
       new_edge.l_i = VECTOR(*vertex_colors)[ext_node];
       new_edge.l_j = VECTOR(*vertex_colors)[neigh];
@@ -1149,6 +1170,10 @@ igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode,
 	if (NEIGHBOR(*graph, neigh, k) == backward_neigh) {
 	  // it is, create the backward edge
 	  new_edge = (igraph_dfscode_edge_t) {.i = ordering_pos+1, .j = j};
+	  if (directed) {
+	    is_outneigh = (k < OUT_DEGREE(*graph, neigh));
+	    new_edge.d = !is_outneigh; // 0 if e=(neigh,backward_neigh), 1 otherwise
+	  }
 	  if (vertex_colors) {
 	    new_edge.l_i = VECTOR(*vertex_colors)[neigh];
 	    new_edge.l_j = VECTOR(*vertex_colors)[backward_neigh];
@@ -1235,12 +1260,19 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
   igraph_vector_int_t *seed_vcolors;
   igraph_vector_int_t *seed_ecolors;
   igraph_integer_t seed_supp;
+  igraph_bool_t directed;
+
+  if ((graphs == NULL) || (igraph_vector_ptr_size(graphs) == 0)) {
+    IGRAPH_ERROR("no graph database specified", IGRAPH_EINVAL);
+  }
+  directed = igraph_is_directed((igraph_t *) VECTOR(*graphs)[0]);
 
   // create graph from DFS code
   seed_graph = igraph_Calloc(1, igraph_t);
   seed_vcolors = igraph_Calloc(1, igraph_vector_int_t);
   seed_ecolors = igraph_Calloc(1, igraph_vector_int_t);
-  IGRAPH_CHECK(igraph_i_dfscode_to_graph(seed_dfscode, seed_graph, seed_vcolors, seed_ecolors));
+  IGRAPH_CHECK(igraph_i_dfscode_to_graph(seed_dfscode, directed,
+			    seed_graph, seed_vcolors, seed_ecolors));
 
   // check if DFS code is canonical
   igraph_i_dfscode_print(seed_dfscode);
