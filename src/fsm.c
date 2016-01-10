@@ -158,10 +158,6 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   success = 1;
   directed = igraph_is_directed(graph1);
 
-  if ((variant == IGRAPH_GSPAN_GERM || variant == IGRAPH_GSPAN_LFRMINER) && directed) {
-    IGRAPH_ERROR("directed edges not implemented in GERM/LFRMiner mode", IGRAPH_UNIMPLEMENTED);
-  }
-
   // STEP 0: create a static ordering of the pattern nodes by DFS
   // if a fixed assignment is given, use this node as root, otherwise take the one with
   // the largest degree (heuristic for better pruning from RI algorithm)
@@ -398,7 +394,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	  }
 	}
 
-	if (directed) {
+	if (directed) { // check the other edge direction, too
 	  igraph_get_eid(graph2, &eid2, pattern_node, other_pattern_node, /*directed*/1, /*err*/0);
 	  if (eid2 > -1) {
 	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, /*directed*/1, /*err*/0);
@@ -406,10 +402,34 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	      success = 0;
 	      igraph_fsm_stats_subiso_failed_edge_existence_count++;
 	    } else {
-	      if (edge_color1 && VECTOR(*edge_color1)[(long int)eid1] !=
-		    VECTOR(*edge_color2)[(long int)eid2]) {
-		success = 0;
-		igraph_fsm_stats_subiso_failed_edge_color_count++;
+	      if (variant == IGRAPH_GSPAN_GERM) {
+		if (edge_color1 && (i == 0) && (partial_solution_pos == 1)) {
+		  germ_delta = (VECTOR(*edge_color1)[(long int)eid1]
+				  - VECTOR(*edge_color2)[(long int)eid2]);
+		  if (germ_delta < 0) {
+		    success = 0;
+		    igraph_fsm_stats_subiso_failed_edge_color_count++;
+		  }
+		}
+		if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
+		      VECTOR(*edge_color2)[(long int)eid2] + germ_delta)) {
+		  success = 0;
+		  igraph_fsm_stats_subiso_failed_edge_color_count++;
+		}
+	      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
+		if (edge_color1 && (i == 0) && (partial_solution_pos == 1)) {
+		  lfrminer_se_timestamp = VECTOR(*edge_color1)[(long int)eid1];
+		} else if (edge_color1 && (VECTOR(*edge_color1)[(long int)eid1]
+		      >= lfrminer_se_timestamp)) {
+		  success = 0;
+		  igraph_fsm_stats_subiso_failed_edge_color_count++;
+		}
+	      } else {
+		if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
+		      VECTOR(*edge_color2)[(long int)eid2])) {
+		  success = 0;
+		  igraph_fsm_stats_subiso_failed_edge_color_count++;
+		}
 	      }
 	    }
 	  } else if (induced) {
