@@ -39,12 +39,16 @@
 __BEGIN_DECLS
 
 typedef enum igraph_projection_t {
+  IGRAPH_PROJECTION_NONE,
   IGRAPH_PROJECTION_FULL,
   IGRAPH_PROJECTION_NEIGHBORS,
   IGRAPH_PROJECTION_EVENT
 } igraph_projection_t;
 
-int igraph_read_dynamic_velist(igraph_vector_ptr_t *graphs, FILE *instream);
+int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs);
+int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directed,
+      igraph_projection_t proj_type,
+      igraph_vector_ptr_t *graphs, igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors);
 
 int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
       igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,

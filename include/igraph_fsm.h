@@ -40,13 +40,19 @@
 
 __BEGIN_DECLS
 
-
 typedef enum igraph_gspan_variant_t {
   IGRAPH_GSPAN_DEFAULT, // works on databases of graphs with or without node/edge labels
   IGRAPH_GSPAN_EVOMINE, // assumes the database contains union graphs (with label strings)
   IGRAPH_GSPAN_GERM, // edge labels = timestamps, vertex labels supported
   IGRAPH_GSPAN_LFRMINER // edge labels = timestamps, no vertex labels supported
 } igraph_gspan_variant_t;
+
+// HELPERS
+
+void igraph_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
+		    const igraph_vector_int_t *ecolors);
+
+void igraph_print_stats(const igraph_t *g);
 
 // O(1) access to in- and out-neighbors and degrees
 

@@ -39,6 +39,7 @@
 #include "igraph_memory.h"
 #include "igraph_components.h"
 #include "igraph_constructors.h"
+#include "igraph_structural.h"
 
 
 // ------------- RUNTIME STATISTICS -------------
@@ -64,40 +65,54 @@ static long int igraph_fsm_stats_lfrminer_invalid_count = 0;
 
 // ------------- HELPER FUNCTIONS -------------
 
-void igraph_i_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
+void igraph_print_stats(const igraph_t *g) {
+  igraph_bool_t simple, multi;
+  igraph_is_simple(g, &simple);
+  igraph_has_multiple(g, &multi);
+  printf("vcount %ld, ecount %ld simple %d multi %d\n",
+      (long int) igraph_vcount(g), (long int) igraph_ecount(g), simple, multi);
+}
+
+void igraph_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
 		    const igraph_vector_int_t *ecolors) {
   long int i;
   if (vcolors != NULL) {
     if (ecolors != NULL) {
       for (i = 0; i < igraph_ecount(g); i++) {
-	printf("%ld(%d) --%d-- %ld(%d)\n", (long int) VECTOR(g->from)[i],
-					   VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]],
-					   VECTOR(*ecolors)[i],
-					   (long int) VECTOR(g->to)[i],
-					   VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]]);
+        printf("%ld(%d) --%d--%s %ld(%d)\n", (long int) VECTOR(g->from)[i],
+                                           VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]],
+                                           VECTOR(*ecolors)[i],
+                                           (igraph_is_directed(g) ? ">": ""),
+                                           (long int) VECTOR(g->to)[i],
+                                           VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]]);
       }
     } else {
       for (i = 0; i < igraph_ecount(g); i++) {
-	printf("%ld(%d) -- %ld(%d)\n", (long int) VECTOR(g->from)[i],
-				       VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]],
-				       (long int) VECTOR(g->to)[i],
-				       VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]]);
+        printf("%ld(%d) --%s %ld(%d)\n", (long int) VECTOR(g->from)[i],
+                                       VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]],
+                                       (igraph_is_directed(g) ? ">": ""),
+                                       (long int) VECTOR(g->to)[i],
+                                       VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]]);
       }
     }
   } else {
     if (ecolors != NULL) {
       for (i = 0; i < igraph_ecount(g); i++) {
-	printf("%ld --%d-- %ld\n", (long int) VECTOR(g->from)[i],
-				   VECTOR(*ecolors)[i],
-				   (long int) VECTOR(g->to)[i]);
+        printf("%ld --%d--%s %ld\n", (long int) VECTOR(g->from)[i],
+                                   VECTOR(*ecolors)[i],
+                                   (igraph_is_directed(g) ? ">": ""),
+                                   (long int) VECTOR(g->to)[i]);
       }
     } else {
       for (i = 0; i < igraph_ecount(g); i++) {
-	printf("%ld -- %ld\n", (long int) VECTOR(g->from)[i], (long int) VECTOR(g->to)[i]);
+        printf("%ld --%s %ld\n", (long int) VECTOR(g->from)[i],
+            (igraph_is_directed(g) ? ">": ""),
+            (long int) VECTOR(g->to)[i]);
       }
     }
   }
 }
+
 
 
 // graph1 is the larger graph, graph2 is the smaller graph
