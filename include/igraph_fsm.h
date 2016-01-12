@@ -47,6 +47,19 @@ typedef enum igraph_gspan_variant_t {
   IGRAPH_GSPAN_LFRMINER // edge labels = timestamps, no vertex labels supported
 } igraph_gspan_variant_t;
 
+typedef struct igraph_lfrminer_data_t {
+  void *unused;
+} igraph_lfrminer_data_t;
+
+typedef struct igraph_germ_data_t {
+  long int max_rel_timestamp;
+} igraph_germ_data_t;
+
+typedef struct igraph_evomine_data_t {
+  long int max_vcolor;
+  long int max_ecolor;
+} igraph_evomine_data_t;
+
 // HELPERS
 
 void igraph_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
@@ -105,6 +118,8 @@ typedef int igraph_support_measure_t(const igraph_t *graph1,
 			   const igraph_vector_int_t *vertex_color2,
 			   const igraph_vector_int_t *edge_color1,
 			   const igraph_vector_int_t *edge_color2,
+			   const igraph_vector_int_t *edge_timestamps1,
+			   const igraph_vector_int_t *edge_timestamps2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
@@ -117,6 +132,8 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *vertex_color2,
 			   const igraph_vector_int_t *edge_color1,
 			   const igraph_vector_int_t *edge_color2,
+			   const igraph_vector_int_t *edge_timestamps1,
+			   const igraph_vector_int_t *edge_timestamps2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
@@ -129,6 +146,8 @@ int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_vector_int_t *vertex_color2,
 		       const igraph_vector_int_t *edge_color1,
 		       const igraph_vector_int_t *edge_color2,
+		       const igraph_vector_int_t *edge_timestamps1,
+		       const igraph_vector_int_t *edge_timestamps2,
 		       igraph_bool_t induced,
 		       igraph_gspan_variant_t variant,
 		       void *variant_data,
@@ -141,6 +160,8 @@ int igraph_egobased_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *vertex_color2,
 			   const igraph_vector_int_t *edge_color1,
 			   const igraph_vector_int_t *edge_color2,
+			   const igraph_vector_int_t *edge_timestamps1,
+			   const igraph_vector_int_t *edge_timestamps2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
@@ -152,9 +173,11 @@ int igraph_egobased_support(const igraph_t *graph1,
 int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_ptr_t *vertex_colors,
 			  const igraph_vector_ptr_t *edge_colors,
+			  const igraph_vector_ptr_t *edge_times,
 			  const igraph_t *pattern,
 			  const igraph_vector_int_t *pattern_vcolors,
 			  const igraph_vector_int_t *pattern_ecolors,
+			  const igraph_vector_int_t *pattern_etimes,
 			  igraph_bool_t induced,
 			  igraph_gspan_variant_t variant,
 			  void *variant_data,
@@ -165,13 +188,14 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 // Mining algorithms
 
 int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
-		const igraph_vector_ptr_t *edge_colors,
+		const igraph_vector_ptr_t *edge_colors, const igraph_vector_ptr_t *edge_times,
 		igraph_support_measure_t *single_graph_support,
 		igraph_integer_t min_supp, igraph_integer_t max_edges,
 		igraph_gspan_variant_t variant,
 		igraph_vector_ptr_t *frequent_subgraphs,
 		igraph_vector_ptr_t *frequent_subgraph_vcolors,
 		igraph_vector_ptr_t *frequent_subgraph_ecolors,
+		igraph_vector_ptr_t *frequent_subgraph_etimes,
 		igraph_vector_int_t *frequent_subgraph_supps);
 
 __END_DECLS

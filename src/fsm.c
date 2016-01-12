@@ -530,6 +530,8 @@ int igraph_mib_support(const igraph_t *graph1,
 		       const igraph_vector_int_t *vertex_color2,
 		       const igraph_vector_int_t *edge_color1,
 		       const igraph_vector_int_t *edge_color2,
+		       const igraph_vector_int_t *edge_timestamp1,
+		       const igraph_vector_int_t *edge_timestamp2,
 		       igraph_bool_t induced,
 		       igraph_gspan_variant_t variant,
 		       void *variant_data,
@@ -652,6 +654,8 @@ int igraph_egobased_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *vertex_color2,
 			   const igraph_vector_int_t *edge_color1,
 			   const igraph_vector_int_t *edge_color2,
+			   const igraph_vector_int_t *edge_timestamp1,
+			   const igraph_vector_int_t *edge_timestamp2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
@@ -704,6 +708,8 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   const igraph_vector_int_t *vertex_color2,
 			   const igraph_vector_int_t *edge_color1,
 			   const igraph_vector_int_t *edge_color2,
+			   const igraph_vector_int_t *edge_timestamp1,
+			   const igraph_vector_int_t *edge_timestamp2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
@@ -728,9 +734,11 @@ int igraph_shallow_support(const igraph_t *graph1,
 int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 			  const igraph_vector_ptr_t *vertex_colors,
 			  const igraph_vector_ptr_t *edge_colors,
+			  const igraph_vector_ptr_t *edge_times,
 			  const igraph_t *pattern,
 			  const igraph_vector_int_t *pattern_vcolors,
 			  const igraph_vector_int_t *pattern_ecolors,
+			  const igraph_vector_int_t *pattern_etimes,
 			  igraph_bool_t induced,
 			  igraph_gspan_variant_t variant,
 			  void *variant_data,
@@ -739,45 +747,25 @@ int igraph_aggregated_db_support(const igraph_vector_ptr_t *graphs,
 			  igraph_integer_t min_supp) {
   long int i;
   igraph_integer_t gsupp;
+  igraph_vector_int_t *vcolors = NULL, *ecolors = NULL, *etimes = NULL;
   *support = 0;
-  if (vertex_colors != NULL) {
-    if (edge_colors != NULL) {
-      for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
-	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
-			      (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
-			      (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
-			      induced, variant, variant_data, &gsupp, /*min_supp=*/ 0);
-	*support += gsupp;
-      }
-    } else {
-      for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
-	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
-			      (igraph_vector_int_t *) VECTOR(*vertex_colors)[i], pattern_vcolors,
-			      NULL, pattern_ecolors, induced, variant, variant_data,
-			      &gsupp, /*min_supp=*/ 0);
-	*support += gsupp;
-      }
-    }
-  } else {
-    if (edge_colors != NULL) {
-      for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
-	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
-			      NULL, pattern_vcolors,
-			      (igraph_vector_int_t *) VECTOR(*edge_colors)[i], pattern_ecolors,
-			      induced, variant, variant_data, &gsupp, /*min_supp=*/ 0);
-	*support += gsupp;
-      }
-    } else {
-      for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
-	single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
-			      NULL, pattern_vcolors,
-			      NULL, pattern_ecolors,
-			      induced, variant, variant_data,
-			      &gsupp, /*min_supp=*/ 0);
-	*support += gsupp;
-      }
-    }
+
+  for (i = 0; i < igraph_vector_ptr_size(graphs); i++) {
+    if (vertex_colors != NULL)
+      vcolors = (igraph_vector_int_t *) VECTOR(*vertex_colors)[i];
+    if (edge_colors != NULL)
+      ecolors = (igraph_vector_int_t *) VECTOR(*edge_colors)[i];
+    if (edge_times != NULL)
+      etimes = (igraph_vector_int_t *) VECTOR(*edge_times)[i];
+
+    single_graph_support((igraph_t *) VECTOR(*graphs)[i], pattern,
+			  vcolors, pattern_vcolors,
+			  ecolors, pattern_ecolors,
+			  etimes, pattern_etimes,
+			  induced, variant, variant_data, &gsupp, /*min_supp=*/ 0);
+    *support += gsupp;
   }
+
   igraph_fsm_stats_aggregated_support_count++;
   return 0;
 }
@@ -793,6 +781,7 @@ typedef struct igraph_dfscode_edge_t {
   long int d; // direction, where 0 means e=(i,j) and 1 means e=(j,i)
   long int l_i; // source label
   long int l_ij; // edge label
+  long int t_ij; // edge timestamp
   long int l_j; // target label
 } igraph_dfscode_edge_t;
 
@@ -814,21 +803,26 @@ int igraph_i_dfscode_compare(const igraph_dfscode_t *a, const igraph_dfscode_t *
 igraph_bool_t igraph_i_dfscode_contains_edge(igraph_dfscode_t *dfscode, long int v1, long int v2);
 int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_bool_t directed,
 		igraph_t *graph,
-		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors);
+		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors,
+		igraph_vector_int_t *edge_timestamps);
 igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igraph_t *graph,
-		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors);
+		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors,
+		igraph_vector_int_t *edge_timestamps);
 igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode, igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors,
+		igraph_vector_int_t *edge_timestamps,
 		long int dfscode_pos, igraph_vector_int_t *ordering, long int ordering_pos,
 		igraph_vector_int_t *visited_nodes);
 int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		const igraph_vector_ptr_t *vertex_colors, const igraph_vector_ptr_t *edge_colors,
+		const igraph_vector_ptr_t *edge_times,
 		igraph_support_measure_t *single_graph_support,
 		igraph_integer_t min_supp, igraph_integer_t max_edges,
 		igraph_gspan_variant_t variant, void *variant_data,
 		igraph_vector_int_t *freq_vcolors, igraph_vector_int_t *freq_ecolors,
 		igraph_dfscode_t *seed_dfscode, igraph_llist_ptr_t *result_graph_list,
-		igraph_llist_ptr_t *result_vcolor_list, igraph_llist_ptr_t *result_ecolor_list,
+		igraph_llist_ptr_t *result_vcolor_list,
+		igraph_llist_ptr_t *result_ecolor_list, igraph_llist_ptr_t *result_etimes_list,
 		igraph_llist_int_t *result_supp_list);
 int igraph_i_minmax_colors(const igraph_vector_ptr_t *vertex_colors,
 		       const igraph_vector_ptr_t *edge_colors,
@@ -843,12 +837,11 @@ int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ec
 				 const igraph_vector_int_t *freq_ecolors,
 				 igraph_integer_t max_edges,
 				 igraph_gspan_variant_t variant,
+				 void *variant_data,
 				 igraph_llist_ptr_t *initial_patterns);
-int igraph_i_build_seeds_germ(igraph_bool_t has_vcolors,
-				 const igraph_vector_int_t *freq_vcolors,
+int igraph_i_build_seeds_lfrminer(igraph_bool_t has_ecolors,
+				 const igraph_vector_int_t *freq_ecolors,
 				 igraph_integer_t max_edges,
-				 igraph_llist_ptr_t *initial_patterns);
-int igraph_i_build_seeds_lfrminer(igraph_integer_t max_edges,
 				 igraph_llist_ptr_t *initial_patterns);
 igraph_bool_t igraph_i_lfrminer_valid(igraph_t *g);
 
@@ -876,9 +869,11 @@ void igraph_i_dfscode_destroy(igraph_dfscode_t *dfscode) {
 void igraph_i_dfscode_print(const igraph_dfscode_t *dfscode) {
   long int i;
   for (i = 0; i < dfscode->last_edge+1; i++) {
-    printf("(%ld, %ld, %s, %ld, %ld, %ld) ", VECTOR(*dfscode)[i].i, VECTOR(*dfscode)[i].j,
-	((VECTOR(*dfscode)[i].d == 0) ? "->" : "<-"),
-	VECTOR(*dfscode)[i].l_i, VECTOR(*dfscode)[i].l_ij, VECTOR(*dfscode)[i].l_j);
+    printf("(%ld,%ld,%s,%ld,%ld,%ld,%ld) ", VECTOR(*dfscode)[i].i, VECTOR(*dfscode)[i].j,
+	((VECTOR(*dfscode)[i].d == 0) ? ">" : "<"),
+	VECTOR(*dfscode)[i].l_i,
+	VECTOR(*dfscode)[i].l_ij, VECTOR(*dfscode)[i].t_ij,
+	VECTOR(*dfscode)[i].l_j);
   }
   printf("\n");
 }
@@ -902,7 +897,8 @@ igraph_dfscode_edge_t igraph_i_dfscode_pop_back(igraph_dfscode_t *dfscode) {
   return VECTOR(*dfscode)[dfscode->last_edge+1];
 }
 
-// definition from CloseGraph paper (Yan & Han 2003)
+// definition from CloseGraph paper (Yan & Han 2003),
+// extended by edge directions and timestamps
 int igraph_i_dfscode_edge_compare(const igraph_dfscode_edge_t *a, const igraph_dfscode_edge_t *b) {
   // first priority: DFS edge ordering (i,j)
   if ((a->i < a->j) && (b->i < b->j)) {
@@ -930,28 +926,34 @@ int igraph_i_dfscode_edge_compare(const igraph_dfscode_edge_t *a, const igraph_d
   }
 
   if (a->i == b->i && a->j == b->j) {
-    // second priority: direction of edge
+    // check direction of edge
     if (a->d < b->d) {
       return -1; // a < b
     }
     if (a->d == b->d) {
-      // third priority: label of node i
+      // check label of node i
       if (a->l_i < b->l_i) {
 	return -1; // a < b
       }
       if (a->l_i == b->l_j) {
-	// fourth priority: label of edge (i,j)
+	// check label of edge (i,j)
 	if (a->l_ij < b->l_ij) {
 	  return -1; // a < b
 	}
 	if (a->l_ij == b->l_ij) {
-	  // fifth priority: label of node j
-	  if (a->l_j < b->l_j) {
+	  // check timestamp of edge (i,j)
+	  if (a->t_ij < b->t_ij) {
 	    return -1; // a < b
 	  }
-	  if (a->l_j == b->l_j) {
-	    // all entries are equal
-	    return 0; // a == b
+	  if (a->t_ij == b->t_ij) {
+	    // check label of node j
+	    if (a->l_j < b->l_j) {
+	      return -1; // a < b
+	    }
+	    if (a->l_j == b->l_j) {
+	      // all entries are equal
+	      return 0; // a == b
+	    }
 	  }
 	}
       }
@@ -1001,8 +1003,8 @@ igraph_bool_t igraph_i_dfscode_contains_edge(igraph_dfscode_t *dfscode, long int
 
 
 int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_bool_t directed,
-		igraph_t *graph,
-		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors) {
+		igraph_t *graph, igraph_vector_int_t *vertex_colors,
+		igraph_vector_int_t *edge_colors, igraph_vector_int_t *edge_timestamps) {
   igraph_vector_t edges;
   long int i;
   long int rightmost_vertex = ((VECTOR(*dfscode)[dfscode->last_edge].i
@@ -1014,6 +1016,7 @@ int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_bool_t dir
 		    (directed ? IGRAPH_DIRECTED : IGRAPH_UNDIRECTED)));
   IGRAPH_CHECK(igraph_vector_int_init(vertex_colors, rightmost_vertex+1));
   IGRAPH_CHECK(igraph_vector_int_init(edge_colors, igraph_i_dfscode_size(dfscode)));
+  IGRAPH_CHECK(igraph_vector_int_init(edge_timestamps, igraph_i_dfscode_size(dfscode)));
   IGRAPH_CHECK(igraph_vector_init(&edges, 2*igraph_i_dfscode_size(dfscode)));
 
   for (i = 0; i < igraph_i_dfscode_size(dfscode); i++) {
@@ -1025,6 +1028,7 @@ int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_bool_t dir
       VECTOR(edges)[2*i+1] = VECTOR(*dfscode)[i].i;
     }
     VECTOR(*edge_colors)[i] = VECTOR(*dfscode)[i].l_ij;
+    VECTOR(*edge_timestamps)[i] = VECTOR(*dfscode)[i].t_ij;
     VECTOR(*vertex_colors)[VECTOR(*dfscode)[i].i] = VECTOR(*dfscode)[i].l_i;
     VECTOR(*vertex_colors)[VECTOR(*dfscode)[i].j] = VECTOR(*dfscode)[i].l_j;
   }
@@ -1042,7 +1046,8 @@ int igraph_i_dfscode_to_graph(const igraph_dfscode_t *dfscode, igraph_bool_t dir
 // Original paper says: almost the same as enumerating all automorphisms, but taking
 // advantage of the prefix property for pruning.
 igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igraph_t *graph,
-		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors) {
+		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors,
+		igraph_vector_int_t *edge_timestamps) {
   long int root;
   igraph_vector_int_t visited_nodes, ordering;
   igraph_bool_t is_smaller;
@@ -1080,6 +1085,7 @@ igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igr
     igraph_vector_int_fill(&visited_nodes, -1);
     VECTOR(visited_nodes)[root] = 0;
     is_smaller = igraph_i_dfscode_is_canonical_rec(dfscode, graph, vertex_colors, edge_colors,
+						   edge_timestamps,
 						   0, &ordering, 0, &visited_nodes);
     if (!is_smaller) {
       // dfscode is not smaller than or equal to all codes grown by DFS from this root node,
@@ -1105,6 +1111,7 @@ igraph_bool_t igraph_i_dfscode_is_canonical(const igraph_dfscode_t *dfscode, igr
 // if a code is found that is smaller than dfscode.
 igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode, igraph_t *graph,
 		igraph_vector_int_t *vertex_colors, igraph_vector_int_t *edge_colors,
+		igraph_vector_int_t *edge_timestamps,
 		long int dfscode_pos, igraph_vector_int_t *ordering, long int ordering_pos,
 		igraph_vector_int_t *visited_nodes) {
   long int i, j, k, neigh, backward_neigh, backward_edge_count, ext_node, ext_node_pos;
@@ -1155,9 +1162,12 @@ igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode,
       new_edge.l_i = VECTOR(*vertex_colors)[ext_node];
       new_edge.l_j = VECTOR(*vertex_colors)[neigh];
     }
+    igraph_get_eid(graph, &eid, ext_node, neigh, 1, 0);
     if (edge_colors) {
-      igraph_get_eid(graph, &eid, ext_node, neigh, 1, 0);
       new_edge.l_ij = VECTOR(*edge_colors)[eid];
+    }
+    if (edge_timestamps) {
+      new_edge.t_ij = VECTOR(*edge_timestamps)[eid];
     }
 
     cmp = igraph_i_dfscode_edge_compare(&new_edge, &VECTOR(*dfscode)[dfscode_pos]);
@@ -1195,9 +1205,12 @@ igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode,
 	    new_edge.l_i = VECTOR(*vertex_colors)[neigh];
 	    new_edge.l_j = VECTOR(*vertex_colors)[backward_neigh];
 	  }
+	  igraph_get_eid(graph, &eid, neigh, backward_neigh, /*directed=*/ 1, /*error=*/ 0);
 	  if (edge_colors) {
-	    igraph_get_eid(graph, &eid, neigh, backward_neigh, /*directed=*/ 1, /*error=*/ 0);
 	    new_edge.l_ij = VECTOR(*edge_colors)[eid];
+	  }
+	  if (edge_timestamps) {
+	    new_edge.t_ij = VECTOR(*edge_timestamps)[eid];
 	  }
 
 	  // check if the backward edge is smaller than the next dfscode position
@@ -1231,6 +1244,7 @@ igraph_bool_t igraph_i_dfscode_is_canonical_rec(const igraph_dfscode_t *dfscode,
 
     // recursively continue search for DFS ordering
     is_less_eq = igraph_i_dfscode_is_canonical_rec(dfscode, graph, vertex_colors, edge_colors,
+						   edge_timestamps,
 						   dfscode_pos+backward_edge_count+1,
 						   ordering, ordering_pos+1, visited_nodes);
     if (!is_less_eq) {
@@ -1291,22 +1305,27 @@ igraph_bool_t igraph_i_lfrminer_valid(igraph_t *g) {
 // node other than right-most vertex). Otherwise, the resulting DFS code can not be
 // minimal. See Yan & Han (2002), Section 5.1 (2), and Borgelt (2006), Section 4.
 int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
-		const igraph_vector_ptr_t *vertex_colors, const igraph_vector_ptr_t *edge_colors,
+		const igraph_vector_ptr_t *vertex_colors,
+		const igraph_vector_ptr_t *edge_colors,
+		const igraph_vector_ptr_t *edge_times,
 		igraph_support_measure_t *single_graph_support,
 		igraph_integer_t min_supp, igraph_integer_t max_edges,
 		igraph_gspan_variant_t variant,
 		void *variant_data,
 		igraph_vector_int_t *freq_vcolors, igraph_vector_int_t *freq_ecolors,
 		igraph_dfscode_t *seed_dfscode, igraph_llist_ptr_t *result_graph_list,
-		igraph_llist_ptr_t *result_vcolor_list, igraph_llist_ptr_t *result_ecolor_list,
+		igraph_llist_ptr_t *result_vcolor_list,
+		igraph_llist_ptr_t *result_ecolor_list,
+		igraph_llist_ptr_t *result_etimes_list,
 		igraph_llist_int_t *result_supp_list) {
-  long int i, j, d, cur_color, rightmost_vertex_color;
+  long int i, j, d, t, cur_color, rightmost_vertex_color;
   long int cur_vertex, prev_vertex, rightmost_vertex;
   igraph_stack_int_t rightmost_path, rightmost_path_colors;
   igraph_dfscode_edge_t new_edge, rightmost_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1};
   igraph_t *seed_graph;
   igraph_vector_int_t *seed_vcolors;
   igraph_vector_int_t *seed_ecolors;
+  igraph_vector_int_t *seed_etimes;
   igraph_integer_t seed_supp;
   igraph_bool_t directed;
 
@@ -1319,26 +1338,30 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
   seed_graph = igraph_Calloc(1, igraph_t);
   seed_vcolors = igraph_Calloc(1, igraph_vector_int_t);
   seed_ecolors = igraph_Calloc(1, igraph_vector_int_t);
+  seed_etimes = igraph_Calloc(1, igraph_vector_int_t);
   IGRAPH_CHECK(igraph_i_dfscode_to_graph(seed_dfscode, directed,
-			    seed_graph, seed_vcolors, seed_ecolors));
+			    seed_graph, seed_vcolors, seed_ecolors, seed_etimes));
 
   // check if DFS code is canonical
   igraph_i_dfscode_print(seed_dfscode);
-  if (!igraph_i_dfscode_is_canonical(seed_dfscode, seed_graph, seed_vcolors, seed_ecolors)) {
+  if (!igraph_i_dfscode_is_canonical(seed_dfscode, seed_graph, seed_vcolors,
+	    seed_ecolors, seed_etimes)) {
     printf("   not canonical\n");
     igraph_destroy(seed_graph);
     igraph_vector_int_destroy(seed_vcolors);
     igraph_vector_int_destroy(seed_ecolors);
+    igraph_vector_int_destroy(seed_etimes);
     igraph_free(seed_graph);
     igraph_free(seed_vcolors);
     igraph_free(seed_ecolors);
+    igraph_free(seed_etimes);
     igraph_fsm_stats_noncanonical_count++;
     return 0;
   }
 
   // compute seed support
-  igraph_aggregated_db_support(graphs, vertex_colors, edge_colors, seed_graph,
-		  seed_vcolors, seed_ecolors, /*induced=*/ 0, variant, variant_data,
+  igraph_aggregated_db_support(graphs, vertex_colors, edge_colors, edge_times, seed_graph,
+		  seed_vcolors, seed_ecolors, seed_etimes, /*induced=*/ 0, variant, variant_data,
 		  single_graph_support,
 		  &seed_supp, min_supp);
   printf("   supp: %ld\n", (long int) seed_supp);
@@ -1419,8 +1442,10 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 					.l_i = cur_color, .l_ij = 0, .l_j = 0};
     switch(variant) {
       case IGRAPH_GSPAN_LFRMINER:
-	// TODO: augment variant_data with STRICT flag to turn on/off connectivity constraints
+	// edge timestamps are not used in the patterns, only in the target graph!
+
 	// enforce additional connectivity constraints to avoid invalid patterns
+	// TODO: augment variant_data with STRICT flag to turn on/off connectivity constraints
 	if ((cur_vertex == 0) && (rightmost_vertex >= 1)) {
 	  break;
 	}
@@ -1439,55 +1464,100 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 	// extend with edge(s) to new standard node (label 2)
 	new_edge.l_j = 2;
 	for (d = 0; d <= (long int) directed; d++) {
+	  // extend with all possible edge directions
 	  new_edge.d = d;
-	  igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-	  igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
-		      min_supp, max_edges, variant, variant_data,
-		      freq_vcolors, freq_ecolors,
-		      seed_dfscode, result_graph_list, result_vcolor_list,
-		      result_ecolor_list, result_supp_list);
-	  igraph_i_dfscode_pop_back(seed_dfscode);
+	  if (edge_colors != NULL) {
+	    // extend with all frequent edge colors
+	    for (i = 0; VECTOR(*freq_ecolors)[i] != -1; i++) {
+	      new_edge.l_ij = VECTOR(*freq_ecolors)[i];
+	      igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
+	      igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+				single_graph_support,
+				min_supp, max_edges, variant, variant_data,
+				freq_vcolors, freq_ecolors,
+				seed_dfscode, result_graph_list, result_vcolor_list,
+				result_ecolor_list, result_etimes_list, result_supp_list);
+	      igraph_i_dfscode_pop_back(seed_dfscode);
+	    }
+	  } else {
+	    // no edge color
+	    igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
+	    igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+				    single_graph_support,
+				    min_supp, max_edges, variant, variant_data,
+				    freq_vcolors, freq_ecolors,
+				    seed_dfscode, result_graph_list, result_vcolor_list,
+				    result_ecolor_list, result_etimes_list, result_supp_list);
+	    igraph_i_dfscode_pop_back(seed_dfscode);
+	  }
 	}
 
 	break;
 
       case IGRAPH_GSPAN_GERM:
 	for (d = 0; d <= (long int) directed; d++) {
+	  // all possible edge directions
 	  new_edge.d = d;
-	  if (vertex_colors != NULL) {
-	    // extend to all possible vertex colors
-	    for (i = 0; VECTOR(*freq_vcolors)[i] != -1; i++) {
-	      new_edge.l_j = VECTOR(*freq_vcolors)[i];
-
-	      // extend with all possible relative timestamps as the edge color;
-	      // variant_data points to an integer that holds the maximum relative timestamp
-	      for (j = 0; j <= *(long int *)variant_data; j++) {
-		  new_edge.l_ij = j;
+	  for (t = 0; t <= ((igraph_germ_data_t *)variant_data)->max_rel_timestamp; t++) {
+	    // all possible relative edge timestamps
+	    new_edge.t_ij = t;
+	    if (vertex_colors != NULL) {
+	      for (i = 0; VECTOR(*freq_vcolors)[i] != -1; i++) {
+		// extend to all possible source vertex colors
+		new_edge.l_j = VECTOR(*freq_vcolors)[i];
+		if (edge_colors != NULL) {
+		  // extend with all frequent edge colors
+		  for (j = 0; VECTOR(*freq_ecolors)[j] != -1; j++) {
+		    new_edge.l_ij = VECTOR(*freq_ecolors)[j];
+		    igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
+		    igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+					    single_graph_support,
+					    min_supp, max_edges, variant, variant_data,
+					    freq_vcolors, freq_ecolors,
+					    seed_dfscode, result_graph_list, result_vcolor_list,
+					    result_ecolor_list, result_etimes_list, result_supp_list);
+		    igraph_i_dfscode_pop_back(seed_dfscode);
+		  }
+		} else {
+		  // no edge color
 		  igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-		  igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
-				  min_supp, max_edges, variant, variant_data,
-				  freq_vcolors, freq_ecolors,
-				  seed_dfscode, result_graph_list, result_vcolor_list,
-				  result_ecolor_list, result_supp_list);
+		  igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+					  single_graph_support,
+					  min_supp, max_edges, variant, variant_data,
+					  freq_vcolors, freq_ecolors,
+					  seed_dfscode, result_graph_list, result_vcolor_list,
+					  result_ecolor_list, result_etimes_list, result_supp_list);
 		  igraph_i_dfscode_pop_back(seed_dfscode);
+		}
 	      }
-	    }
-	  } else {
-	    // extend with all possible relative timestamps as the edge color;
-	    // variant_data points to an integer that holds the maximum possible relative timestamp
-	    for (i = 0; i <= *(long int *)variant_data; i++) {
-	      new_edge.l_ij = i;
-	      igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-	      igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
-				  min_supp, max_edges, variant, variant_data,
-				  freq_vcolors, freq_ecolors,
-				  seed_dfscode, result_graph_list, result_vcolor_list,
-				  result_ecolor_list, result_supp_list);
-	      igraph_i_dfscode_pop_back(seed_dfscode);
-	    }
-	  }
-	}
-	break;
+	    } else { // no vertex colors
+	      if (edge_colors != NULL) {
+		// extend with all frequent edge colors
+		for (i = 0; VECTOR(*freq_ecolors)[i] != -1; i++) {
+		  new_edge.l_ij = VECTOR(*freq_ecolors)[i];
+		  igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
+		  igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+				    single_graph_support,
+				    min_supp, max_edges, variant, variant_data,
+				    freq_vcolors, freq_ecolors,
+				    seed_dfscode, result_graph_list, result_vcolor_list,
+				    result_ecolor_list, result_etimes_list, result_supp_list);
+		  igraph_i_dfscode_pop_back(seed_dfscode);
+		}
+	      } else {
+		// no edge color
+		igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
+		igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+					single_graph_support,
+					min_supp, max_edges, variant, variant_data,
+					freq_vcolors, freq_ecolors,
+					seed_dfscode, result_graph_list, result_vcolor_list,
+					result_ecolor_list, result_etimes_list, result_supp_list);
+		igraph_i_dfscode_pop_back(seed_dfscode);
+	      }
+	    } // if (vertex_colors)
+	  } // edge timestamps
+	} // edge directions
 
       case IGRAPH_GSPAN_EVOMINE:
       case IGRAPH_GSPAN_DEFAULT:
@@ -1502,21 +1572,23 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		for (j = 0; VECTOR(*freq_ecolors)[j] != -1; j++) {
 		  new_edge.l_ij = VECTOR(*freq_ecolors)[j];
 		  igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-		  igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+		  igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+					  single_graph_support,
 					  min_supp, max_edges, variant, variant_data,
 					  freq_vcolors, freq_ecolors,
 					  seed_dfscode, result_graph_list, result_vcolor_list,
-					  result_ecolor_list, result_supp_list);
+					  result_ecolor_list, result_etimes_list, result_supp_list);
 		  igraph_i_dfscode_pop_back(seed_dfscode);
 		}
 	      } else {
 		// no edge color
 		igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-		igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+		igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+					single_graph_support,
 					min_supp, max_edges, variant, variant_data,
 					freq_vcolors, freq_ecolors,
 					seed_dfscode, result_graph_list, result_vcolor_list,
-					result_ecolor_list, result_supp_list);
+					result_ecolor_list, result_etimes_list, result_supp_list);
 		igraph_i_dfscode_pop_back(seed_dfscode);
 	      }
 	    }
@@ -1526,21 +1598,23 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 	      for (i = 0; VECTOR(*freq_ecolors)[i] != -1; i++) {
 		new_edge.l_ij = VECTOR(*freq_ecolors)[i];
 		igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-		igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+		igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+				  single_graph_support,
 				  min_supp, max_edges, variant, variant_data,
 				  freq_vcolors, freq_ecolors,
 				  seed_dfscode, result_graph_list, result_vcolor_list,
-				  result_ecolor_list, result_supp_list);
+				  result_ecolor_list, result_etimes_list, result_supp_list);
 		igraph_i_dfscode_pop_back(seed_dfscode);
 	      }
 	    } else {
 	      // no edge color
 	      igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-	      igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+	      igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+				      single_graph_support,
 				      min_supp, max_edges, variant, variant_data,
 				      freq_vcolors, freq_ecolors,
 				      seed_dfscode, result_graph_list, result_vcolor_list,
-				      result_ecolor_list, result_supp_list);
+				      result_ecolor_list, result_etimes_list, result_supp_list);
 	      igraph_i_dfscode_pop_back(seed_dfscode);
 	    }
 	  } // if (vertex_colors)
@@ -1578,7 +1652,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     }
 
     new_edge = (igraph_dfscode_edge_t) {.i = rightmost_vertex, .j = cur_vertex, .d = 0,
-					.l_i = rightmost_vertex_color, .l_ij = 0,
+					.l_i = rightmost_vertex_color, .l_ij = 0, .t_ij = 0,
 					.l_j = cur_color};
 
     // extend in all possible directions
@@ -1603,39 +1677,46 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
       // actual backward extension
       switch (variant) {
 	case IGRAPH_GSPAN_GERM:
-	    // extend with all possible relative edge timestamps
-	    for (i = 0; i <= *(long int *)variant_data; i++) {
-	      new_edge.l_ij = i;
+	  // extend with all possible relative edge timestamps
+	  for (t = 0; t <= ((igraph_germ_data_t *)variant_data)->max_rel_timestamp; t++) {
+	    new_edge.t_ij = t;
+	    if (edge_colors != NULL) {
+	      // extend with all possible edge colors
+	      for (i = 0; VECTOR(*freq_ecolors)[i] != -1; i++) {
+		new_edge.l_ij = VECTOR(*freq_ecolors)[i];
+		igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
+		igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+			    single_graph_support,
+			    min_supp, max_edges, variant, variant_data,
+			    freq_vcolors, freq_ecolors,
+			    seed_dfscode, result_graph_list, result_vcolor_list,
+			    result_ecolor_list, result_etimes_list, result_supp_list);
+		igraph_i_dfscode_pop_back(seed_dfscode);
+	      }
+	    } else {
+	      // extend with unlabelled edge
 	      igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-	      igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+	      igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+				single_graph_support,
 				min_supp, max_edges, variant, variant_data,
 				freq_vcolors, freq_ecolors,
 				seed_dfscode, result_graph_list, result_vcolor_list,
-				result_ecolor_list, result_supp_list);
+				result_ecolor_list, result_etimes_list, result_supp_list);
 	      igraph_i_dfscode_pop_back(seed_dfscode);
 	    }
-	    break;
+	  }
+	  break;
 
 	case IGRAPH_GSPAN_LFRMINER:
-	    // TODO: augment variant_data with STRICT flag to turn on/off connectivity constraints
-	    // enforce additional connectivity constraint to avoid invalid patterns
-	    if (cur_vertex >= 2) {
-	      if (!(igraph_i_dfscode_contains_edge(seed_dfscode, rightmost_vertex, 0)
-		    && igraph_i_dfscode_contains_edge(seed_dfscode, rightmost_vertex, 1))) {
-		break;
-	      }
+	  // enforce additional connectivity constraint to avoid invalid patterns
+	  // TODO: augment variant_data with STRICT flag to turn on/off connectivity constraints
+	  if (cur_vertex >= 2) {
+	    if (!(igraph_i_dfscode_contains_edge(seed_dfscode, rightmost_vertex, 0)
+	          && igraph_i_dfscode_contains_edge(seed_dfscode, rightmost_vertex, 1))) {
+	      break;
 	    }
-
-	    // extend with unlabelled edge
-	    igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-	    igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
-			      min_supp, max_edges, variant, variant_data,
-			      freq_vcolors, freq_ecolors,
-			      seed_dfscode, result_graph_list, result_vcolor_list,
-			      result_ecolor_list, result_supp_list);
-	    igraph_i_dfscode_pop_back(seed_dfscode);
-	    break;
-
+	  }
+	  // NO BREAK HERE! we perform the standard backward extension from below!
 	case IGRAPH_GSPAN_EVOMINE:
 	case IGRAPH_GSPAN_DEFAULT:
 	default:
@@ -1644,21 +1725,23 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 	    for (i = 0; VECTOR(*freq_ecolors)[i] != -1; i++) {
 	      new_edge.l_ij = VECTOR(*freq_ecolors)[i];
 	      igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-	      igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+	      igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+			  single_graph_support,
 			  min_supp, max_edges, variant, variant_data,
 			  freq_vcolors, freq_ecolors,
 			  seed_dfscode, result_graph_list, result_vcolor_list,
-			  result_ecolor_list, result_supp_list);
+			  result_ecolor_list, result_etimes_list, result_supp_list);
 	      igraph_i_dfscode_pop_back(seed_dfscode);
 	    }
 	  } else {
 	    // extend with unlabelled edge
 	    igraph_i_dfscode_push_back(seed_dfscode, &new_edge);
-	    igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+	    igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+			      single_graph_support,
 			      min_supp, max_edges, variant, variant_data,
 			      freq_vcolors, freq_ecolors,
 			      seed_dfscode, result_graph_list, result_vcolor_list,
-			      result_ecolor_list, result_supp_list);
+			      result_ecolor_list, result_etimes_list, result_supp_list);
 	    igraph_i_dfscode_pop_back(seed_dfscode);
 	  }
 	  break;
@@ -1671,41 +1754,38 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 }
 
 
-// GERM is currently only implemented for unlabelled edges!
-// Edge labels are interpreted as timestamps.
-int igraph_i_build_seeds_germ(igraph_bool_t has_vcolors,
-				 const igraph_vector_int_t *freq_vcolors,
+// LFR-Miner is currently only implemented for unlabelled nodes!
+// Edge labels supported. Node labels mark s and e.
+// All other nodes created during extension will have the color 2.
+int igraph_i_build_seeds_lfrminer(igraph_bool_t has_ecolors,
+				 const igraph_vector_int_t *freq_ecolors,
 				 igraph_integer_t max_edges,
 				 igraph_llist_ptr_t *initial_patterns) {
   igraph_dfscode_t *pattern_dfscode;
   igraph_dfscode_edge_t pattern_dfscode_edge;
-  long int i, j;
+  long int k;
 
-  if (has_vcolors) {
-    for (i = 0; VECTOR(*freq_vcolors)[i] != -1; i++) {
-      for (j = 0; j <= i && VECTOR(*freq_vcolors)[j] != -1; j++) {
-	// create seed edge with all frequent vertex label pairs and edge timestamp 0
-	// VC[i] -- 0 -- VC[j]
-	pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-	pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-		      .l_i = VECTOR(*freq_vcolors)[i],
-		      .d = 0,
-		      .l_ij = 0,
-		      .l_j = VECTOR(*freq_vcolors)[j]};
-	igraph_i_dfscode_init(pattern_dfscode, max_edges);
-	igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-	igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
-      }
+  if (has_ecolors) {
+    for (k = 0; VECTOR(*freq_ecolors)[k] != -1; k++) {
+      // s --EC[k]--> e
+      pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
+      pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
+			.l_i = 0,
+			.d = 0,
+			.l_ij = VECTOR(*freq_ecolors)[k],
+			.l_j = 1};
+      igraph_i_dfscode_init(pattern_dfscode, max_edges);
+      igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
+      igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
     }
   } else {
-    // The only seed edge to create is the one with timestamp 0
-    // v -- 0 -- v
+    // s --> e
     pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
     pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
 		      .l_i = 0,
 		      .d = 0,
 		      .l_ij = 0,
-		      .l_j = 0};
+		      .l_j = 1};
     igraph_i_dfscode_init(pattern_dfscode, max_edges);
     igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
     igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
@@ -1715,35 +1795,14 @@ int igraph_i_build_seeds_germ(igraph_bool_t has_vcolors,
 }
 
 
-// LFR-Miner is currently only implemented for unlabelled nodes and edges!
-// Edge labels are interpreted as timestamps. Node labels mark s and e.
-// The only seed edge to create is the edge between s (clr=0) and e (clr=1):
-//      s -- 0 -- e
-// All other nodes created during extension will have the color 2.
-int igraph_i_build_seeds_lfrminer(igraph_integer_t max_edges,
-				 igraph_llist_ptr_t *initial_patterns) {
-  igraph_dfscode_t *pattern_dfscode;
-  igraph_dfscode_edge_t pattern_dfscode_edge;
-
-  pattern_dfscode = igraph_Calloc(1, igraph_dfscode_t);
-  pattern_dfscode_edge = (igraph_dfscode_edge_t) {.i = 0, .j = 1,
-		    .l_i = 0,
-		    .d = 0,
-		    .l_ij = 0,
-		    .l_j = 1};
-  igraph_i_dfscode_init(pattern_dfscode, max_edges);
-  igraph_i_dfscode_push_back(pattern_dfscode, &pattern_dfscode_edge);
-  igraph_llist_ptr_push_back(initial_patterns, pattern_dfscode);
-
-  return 0;
-}
-
-
+// NOTE: When run in GERM mode, initial edges always have a timestamp of 0,
+//       because the timestamp field in igraph_dfscode_edge_t is initialized with 0
 int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ecolors,
 				 const igraph_vector_int_t *freq_vcolors,
 				 const igraph_vector_int_t *freq_ecolors,
 				 igraph_integer_t max_edges,
 				 igraph_gspan_variant_t variant,
+				 void *variant_data,
 				 igraph_llist_ptr_t *initial_patterns) {
   igraph_dfscode_t *pattern_dfscode;
   igraph_dfscode_edge_t pattern_dfscode_edge;
@@ -1938,59 +1997,22 @@ int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
 // assert: min_supp > 0
 // assert: undirected graphs
 int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *vertex_colors,
-		 const igraph_vector_ptr_t *edge_colors,
+		 const igraph_vector_ptr_t *edge_colors, const igraph_vector_ptr_t *edge_times,
 		 igraph_support_measure_t *single_graph_support,
 		 igraph_integer_t min_supp, igraph_integer_t max_edges,
 		 igraph_gspan_variant_t variant,
 		 igraph_vector_ptr_t *frequent_subgraphs,
 		 igraph_vector_ptr_t *frequent_subgraph_vcolors,
 		 igraph_vector_ptr_t *frequent_subgraph_ecolors,
+		 igraph_vector_ptr_t *frequent_subgraph_etimes,
 		 igraph_vector_int_t *frequent_subgraph_supps) {
-  void *variant_data;
   long int max_vcolor, max_ecolor, min_vcolor, min_ecolor;
+  void *variant_data;
   igraph_vector_int_t freq_ecolors, freq_vcolors;
   igraph_llist_ptr_t initial_patterns;
   igraph_llist_item_ptr_t *item_ptr;
-  igraph_llist_ptr_t result_graph_list, result_vcolor_list, result_ecolor_list;
+  igraph_llist_ptr_t result_graph_list, result_vcolor_list, result_ecolor_list, result_etimes_list;
   igraph_llist_int_t result_supp_list;
-
-  // INITIALIZE DIFFERENT VARIANTS OF GSPAN
-
-  switch (variant) {
-    case IGRAPH_GSPAN_EVOMINE:
-      if (edge_colors == NULL) {
-	IGRAPH_ERROR("EvoMine needs edge labels that encode dynamics, but no edge labels specified",
-			  IGRAPH_EINVAL);
-      }
-      // EvoMine needs the maximum node and edge color to determine which label
-      // strings are dynamic. Unused right now.
-      variant_data = igraph_Calloc(2, long int);
-      break;
-    case IGRAPH_GSPAN_GERM:
-      if (edge_colors == NULL) {
-	IGRAPH_ERROR("GERM needs edge labels that encode timestamps, but no edge labels specified",
-			  IGRAPH_EINVAL);
-      }
-      // GERM needs to know the maximum possible relative timestamp
-      // for the extension operation
-      variant_data = igraph_Calloc(1, long int);
-      break;
-    case IGRAPH_GSPAN_LFRMINER:
-      if (edge_colors == NULL) {
-	IGRAPH_ERROR("LFR-Miner needs edge labels that encode timestamps, but no edge labels "
-			"specified", IGRAPH_EINVAL);
-      }
-      if (vertex_colors != NULL) {
-	IGRAPH_ERROR("LFR-Miner not implemented for labelled nodes", IGRAPH_UNIMPLEMENTED);
-      }
-      // TODO: Store edge timestamps in variant_data, so that we can use ecolors for
-      //       actual edge lables. Same can be done for GERM.
-      // no break here
-    case IGRAPH_GSPAN_DEFAULT:
-    default:
-      variant_data = NULL;
-      break;
-  }
 
   // FIND FREQUENT VERTEX AND EDGE COLORS
 
@@ -1998,36 +2020,38 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   igraph_i_minmax_colors(vertex_colors, edge_colors, &max_vcolor, &max_ecolor,
 			&min_vcolor, &min_ecolor);
 
-  if (variant == IGRAPH_GSPAN_GERM) {
-    *(long int *)variant_data = max_ecolor-min_ecolor;
-  } else if (variant == IGRAPH_GSPAN_EVOMINE) {
-    ((long int *)variant_data)[0] = max_vcolor;
-    ((long int *)variant_data)[1] = max_ecolor;
-  }
-
   // determine frequent vertex and edge colors
   igraph_vector_int_init(&freq_vcolors, 0);
   igraph_vector_int_init(&freq_ecolors, 0);
   igraph_i_frequent_colors(vertex_colors, edge_colors, min_supp, max_vcolor, max_ecolor,
 			&freq_vcolors, &freq_ecolors);
 
+  if (variant == IGRAPH_GSPAN_GERM) {
+    variant_data = igraph_Calloc(1, igraph_germ_data_t);
+    ((igraph_germ_data_t *)variant_data)->max_rel_timestamp = max_ecolor-min_ecolor;
+  } else if (variant == IGRAPH_GSPAN_EVOMINE) {
+    variant_data = igraph_Calloc(1, igraph_evomine_data_t);
+    ((igraph_evomine_data_t *)variant_data)->max_vcolor = max_vcolor;
+    ((igraph_evomine_data_t *)variant_data)->max_ecolor = max_ecolor;
+  } else {
+    variant_data = NULL;
+  }
+
   // BUILD ALL 1-EDGE GRAPHS AS SEEDS
 
   IGRAPH_CHECK(igraph_llist_ptr_init(&initial_patterns));
 
   switch (variant) {
-    case IGRAPH_GSPAN_GERM:
-      IGRAPH_CHECK(igraph_i_build_seeds_germ((vertex_colors != NULL), &freq_vcolors, max_edges,
-				    &initial_patterns));
-      break;
     case IGRAPH_GSPAN_LFRMINER:
-      IGRAPH_CHECK(igraph_i_build_seeds_lfrminer(max_edges, &initial_patterns));
+      IGRAPH_CHECK(igraph_i_build_seeds_lfrminer((edge_colors != NULL), &freq_ecolors,
+				    max_edges, &initial_patterns));
       break;
     case IGRAPH_GSPAN_EVOMINE:
+    case IGRAPH_GSPAN_GERM:
     case IGRAPH_GSPAN_DEFAULT:
     default:
       IGRAPH_CHECK(igraph_i_build_seeds_default((vertex_colors != NULL), (edge_colors != NULL),
-		      &freq_vcolors, &freq_ecolors, max_edges, variant,
+		      &freq_vcolors, &freq_ecolors, max_edges, variant, variant_data,
 		      &initial_patterns));
       break;
   }
@@ -2037,13 +2061,16 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_graph_list));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_vcolor_list));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_ecolor_list));
+  IGRAPH_CHECK(igraph_llist_ptr_init(&result_etimes_list));
   IGRAPH_CHECK(igraph_llist_int_init(&result_supp_list));
 
   for (item_ptr = initial_patterns.first; item_ptr != NULL; item_ptr = item_ptr->next) {
-    IGRAPH_CHECK(igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, single_graph_support,
+    IGRAPH_CHECK(igraph_i_dfscode_extend(graphs, vertex_colors, edge_colors, edge_times,
+		    single_graph_support,
 		    min_supp, max_edges, variant, variant_data, &freq_vcolors, &freq_ecolors,
 		    (igraph_dfscode_t *) item_ptr->data, &result_graph_list,
-		    &result_vcolor_list, &result_ecolor_list, &result_supp_list));
+		    &result_vcolor_list, &result_ecolor_list, &result_etimes_list,
+		    &result_supp_list));
   }
 
   // PREPARE RESULT SET
@@ -2056,6 +2083,8 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
     igraph_llist_ptr_to_vector(&result_vcolor_list, frequent_subgraph_vcolors);
   if (frequent_subgraph_ecolors != NULL)
     igraph_llist_ptr_to_vector(&result_ecolor_list, frequent_subgraph_ecolors);
+  if (frequent_subgraph_etimes != NULL)
+    igraph_llist_ptr_to_vector(&result_etimes_list, frequent_subgraph_etimes);
   if (frequent_subgraph_supps != NULL)
     igraph_llist_int_to_vector(&result_supp_list, frequent_subgraph_supps);
 
@@ -2085,6 +2114,12 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
       igraph_vector_int_destroy((igraph_vector_int_t *) item_ptr->data);
     }
   }
+  if (frequent_subgraph_etimes == NULL) {
+    // same here
+    for (item_ptr = result_etimes_list.first; item_ptr != NULL; item_ptr = item_ptr->next) {
+      igraph_vector_int_destroy((igraph_vector_int_t *) item_ptr->data);
+    }
+  }
 
   // free memory for temporary structures
   for (item_ptr = initial_patterns.first; item_ptr != NULL; item_ptr = item_ptr->next) {
@@ -2096,6 +2131,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   igraph_llist_ptr_destroy(&result_graph_list);
   igraph_llist_ptr_destroy(&result_vcolor_list);
   igraph_llist_ptr_destroy(&result_ecolor_list);
+  igraph_llist_ptr_destroy(&result_etimes_list);
 
   // STATISTICS
 
