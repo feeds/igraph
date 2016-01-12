@@ -45,6 +45,18 @@ typedef enum igraph_projection_t {
   IGRAPH_PROJECTION_EVENT
 } igraph_projection_t;
 
+typedef enum igraph_event_type_t {
+  IGRAPH_EVENT_NODE_RELABEL,
+  IGRAPH_EVENT_EDGE_INSERTION,
+  IGRAPH_EVENT_EDGE_DELETION,
+  IGRAPH_EVENT_EDGE_RELABEL
+} igraph_event_type_t;
+
+typedef struct igraph_event_t {
+  igraph_event_type_t type;
+  long int v1, v2, label;
+} igraph_event_t;
+
 int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs);
 int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directed,
       igraph_projection_t proj_type,
@@ -59,6 +71,8 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
 
 int igraph_write_colored_graph(igraph_t *g, igraph_vector_int_t *vcolors,
       igraph_vector_int_t *ecolors, FILE *f);
+
+void igraph_evomine_stream(igraph_t *initial_network, igraph_event_t *stream);
 
 __END_DECLS
 
