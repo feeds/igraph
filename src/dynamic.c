@@ -497,6 +497,7 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 				  && (union_graph_vcolors != NULL));
   igraph_bool_t has_ecolors = ((ecolors1 != NULL) && (ecolors2 != NULL)
 				  && (union_graph_ecolors != NULL));
+  igraph_bool_t directed = igraph_is_directed(graph1);
 
   // make sure that we only get supported vertex selectors
   if (!((igraph_vs_type(&node_selector) == IGRAPH_VS_1)
@@ -508,7 +509,7 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
   }
   IGRAPH_CHECK(igraph_vs_size(graph1, &node_selector, &vcount)); // same result for graph2
 
-  IGRAPH_CHECK(igraph_empty(union_graph, vcount, /*directed=*/ 0));
+  IGRAPH_CHECK(igraph_empty(union_graph, vcount, directed));
   if (has_vcolors) {
     IGRAPH_CHECK(igraph_vector_int_resize(union_graph_vcolors, vcount));
   }

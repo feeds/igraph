@@ -69,8 +69,9 @@ void igraph_print_stats(const igraph_t *g) {
   igraph_bool_t simple, multi;
   igraph_is_simple(g, &simple);
   igraph_has_multiple(g, &multi);
-  printf("vcount %ld, ecount %ld simple %d multi %d\n",
-      (long int) igraph_vcount(g), (long int) igraph_ecount(g), simple, multi);
+  printf("vcount %ld ecount %ld directed %d simple %d multi %d\n",
+      (long int) igraph_vcount(g), (long int) igraph_ecount(g), (int)igraph_is_directed(g),
+      simple, multi);
 }
 
 void igraph_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
@@ -1492,7 +1493,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
       case IGRAPH_GSPAN_DEFAULT:
       default:
 	for (d = 0; d <= (long int) directed; d++) {
-	  new_edge.d = 0;
+	  new_edge.d = d;
 	  if (vertex_colors != NULL) {
 	    for (i = 0; VECTOR(*freq_vcolors)[i] != -1; i++) {
 	      new_edge.l_j = VECTOR(*freq_vcolors)[i]; // extend to all possible vertex colors
