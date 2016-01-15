@@ -48,6 +48,7 @@ static long int igraph_fsm_stats_subiso_success_count = 0;
 static long int igraph_fsm_stats_subiso_fail_count = 0;
 static long int igraph_fsm_stats_subiso_failed_edge_existence_count = 0;
 static long int igraph_fsm_stats_subiso_failed_edge_color_count = 0;
+static long int igraph_fsm_stats_subiso_failed_edge_timestamp_count = 0;
 static long int igraph_fsm_stats_subiso_failed_node_duplicate_count = 0;
 static long int igraph_fsm_stats_subiso_failed_node_degree_count = 0;
 static long int igraph_fsm_stats_subiso_failed_node_color_count = 0;
@@ -75,45 +76,48 @@ void igraph_print_stats(const igraph_t *g) {
 }
 
 void igraph_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
-		    const igraph_vector_int_t *ecolors) {
+		    const igraph_vector_int_t *ecolors, const igraph_vector_int_t *etimes) {
   long int i;
-  if (vcolors != NULL) {
-    if (ecolors != NULL) {
-      for (i = 0; i < igraph_ecount(g); i++) {
-        printf("%ld(%d) --%d--%s %ld(%d)\n", (long int) VECTOR(g->from)[i],
-                                           VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]],
-                                           VECTOR(*ecolors)[i],
-                                           (igraph_is_directed(g) ? ">": ""),
-                                           (long int) VECTOR(g->to)[i],
-                                           VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]]);
-      }
-    } else {
-      for (i = 0; i < igraph_ecount(g); i++) {
-        printf("%ld(%d) --%s %ld(%d)\n", (long int) VECTOR(g->from)[i],
-                                       VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]],
-                                       (igraph_is_directed(g) ? ">": ""),
-                                       (long int) VECTOR(g->to)[i],
-                                       VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]]);
-      }
-    }
-  } else {
-    if (ecolors != NULL) {
-      for (i = 0; i < igraph_ecount(g); i++) {
-        printf("%ld --%d--%s %ld\n", (long int) VECTOR(g->from)[i],
-                                   VECTOR(*ecolors)[i],
-                                   (igraph_is_directed(g) ? ">": ""),
-                                   (long int) VECTOR(g->to)[i]);
-      }
-    } else {
-      for (i = 0; i < igraph_ecount(g); i++) {
-        printf("%ld --%s %ld\n", (long int) VECTOR(g->from)[i],
-            (igraph_is_directed(g) ? ">": ""),
-            (long int) VECTOR(g->to)[i]);
-      }
-    }
+  for (i = 0; i < igraph_ecount(g); i++) {
+    printf("%ld(%d) --%d[%d]--%s %ld(%d)\n",
+		(long int) VECTOR(g->from)[i],
+		((vcolors != NULL) ? VECTOR(*vcolors)[(long int) VECTOR(g->from)[i]] : 0),
+		((ecolors != NULL) ? VECTOR(*ecolors)[i] : 0),
+		((etimes != NULL) ? VECTOR(*etimes)[i] : 0),
+		(igraph_is_directed(g) ? ">": ""),
+		(long int) VECTOR(g->to)[i],
+		((vcolors != NULL) ? VECTOR(*vcolors)[(long int) VECTOR(g->to)[i]] : 0));
   }
 }
 
+
+int igraph_write_colored_graph(igraph_t *g, igraph_vector_int_t *vcolors,
+      igraph_vector_int_t *ecolors, igraph_vector_int_t *etimes, FILE *f) {
+  long int i;
+  igraph_integer_t from, to;
+  for (i = 0; i < igraph_vcount(g); i++) {
+    if (vcolors != NULL)
+      fprintf(f, "v %ld %d\n", i, VECTOR(*vcolors)[i]);
+    else
+      fprintf(f, "v %ld\n", i);
+  }
+  for (i = 0; i < igraph_ecount(g); i++) {
+    IGRAPH_CHECK(igraph_edge(g, i, &from, &to));
+    fprintf(f, "e %ld %ld", (long int) from, (long int) to);
+    if (ecolors != NULL) {
+      fprintf(f, " %d", VECTOR(*ecolors)[i]);
+      if (etimes != NULL) {
+	fprintf(f, " %d", VECTOR(*etimes)[i]);
+      }
+    } else {
+      if (etimes != NULL) {
+	fprintf(f, " %d", VECTOR(*etimes)[i]);
+      }
+    }
+    fprintf(f, "\n");
+  }
+  return 0;
+}
 
 
 // graph1 is the larger graph, graph2 is the smaller graph
@@ -144,6 +148,8 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 			   const igraph_vector_int_t *vertex_color2,
 			   const igraph_vector_int_t *edge_color1,
 			   const igraph_vector_int_t *edge_color2,
+			   const igraph_vector_int_t *edge_timestamp1,
+			   const igraph_vector_int_t *edge_timestamp2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
@@ -165,9 +171,13 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   igraph_stack_t dfs_pred_stack;
   igraph_bool_t directed;
 
-  // data for different variants
+  // initialize different variants
   long int germ_delta = 0;
   long int lfrminer_se_timestamp = 0;
+  if (((variant == IGRAPH_GSPAN_LFRMINER) || (variant == IGRAPH_GSPAN_GERM))
+	&& (edge_timestamp1 == NULL)) {
+    IGRAPH_ERROR("GERM and LFR-Miner need edge timestamps!", IGRAPH_EINVAL);
+  }
 
   *iso = 0;
   end = 0;
@@ -366,40 +376,40 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	    success = 0;
 	    igraph_fsm_stats_subiso_failed_edge_existence_count++;
 	  } else {
+	    // check edge timestamps (for some variants only)
 	    if (variant == IGRAPH_GSPAN_GERM) {
-	      // edge timestamps (=colors) do not have to match exactly, but with
-	      // a fixed time gap that is determined by the first matched edge
-	      if (edge_color1 && (i == 0) && (partial_solution_pos == 1)) {
+	      // edge timestamps have to match with a fixed time gap that is
+	      // determined by the first matched edge
+	      if ((i == 0) && (partial_solution_pos == 1)) {
 		// this is the first edge we are matching, store the time gap
-		germ_delta = (VECTOR(*edge_color1)[(long int)eid1]
-				- VECTOR(*edge_color2)[(long int)eid2]);
+		germ_delta = (VECTOR(*edge_timestamp1)[(long int)eid1]
+				  - VECTOR(*edge_timestamp2)[(long int)eid2]);
 		if (germ_delta < 0) {
 		  success = 0;
-		  igraph_fsm_stats_subiso_failed_edge_color_count++;
+		  igraph_fsm_stats_subiso_failed_edge_timestamp_count++;
 		}
 	      }
-	      if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
-		    VECTOR(*edge_color2)[(long int)eid2] + germ_delta)) {
+	      if (success && (VECTOR(*edge_timestamp1)[(long int)eid1] !=
+		    VECTOR(*edge_timestamp2)[(long int)eid2] + germ_delta)) {
 		success = 0;
-		igraph_fsm_stats_subiso_failed_edge_color_count++;
+		igraph_fsm_stats_subiso_failed_edge_timestamp_count++;
 	      }
 	    } else if (variant == IGRAPH_GSPAN_LFRMINER) {
-	      // edge timestamps (=colors) do not have to match exactly, they only
-	      // have to be smaller than the timestamp of the (s, e) edge
-	      if (edge_color1 && (i == 0) && (partial_solution_pos == 1)) {
+	      // edge timestamps have to be smaller than the timestamp of the (s, e) edge
+	      if ((i == 0) && (partial_solution_pos == 1)) {
 		// this is the (s,e) edge! store edge timestamp
-		lfrminer_se_timestamp = VECTOR(*edge_color1)[(long int)eid1];
-	      } else if (edge_color1 && (VECTOR(*edge_color1)[(long int)eid1]
-		    >= lfrminer_se_timestamp)) {
+		lfrminer_se_timestamp = VECTOR(*edge_timestamp1)[(long int)eid1];
+	      } else if (VECTOR(*edge_timestamp1)[(long int)eid1] >= lfrminer_se_timestamp) {
 		success = 0;
-		igraph_fsm_stats_subiso_failed_edge_color_count++;
+		igraph_fsm_stats_subiso_failed_edge_timestamp_count++;
 	      }
-	    } else { // all other gSpan variants
-	      if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
-		    VECTOR(*edge_color2)[(long int)eid2])) {
-		success = 0;
-		igraph_fsm_stats_subiso_failed_edge_color_count++;
-	      }
+	    }
+
+	    // check edge color
+	    if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
+	          VECTOR(*edge_color2)[(long int)eid2])) {
+	      success = 0;
+	      igraph_fsm_stats_subiso_failed_edge_color_count++;
 	    }
 	  }
 	} else if (induced) {
@@ -418,34 +428,42 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	      success = 0;
 	      igraph_fsm_stats_subiso_failed_edge_existence_count++;
 	    } else {
+	      // check edge timestamps (for some variants only)
 	      if (variant == IGRAPH_GSPAN_GERM) {
-		if (edge_color1 && (i == 0) && (partial_solution_pos == 1)) {
-		  germ_delta = (VECTOR(*edge_color1)[(long int)eid1]
-				  - VECTOR(*edge_color2)[(long int)eid2]);
+		// edge timestamps have to match with a fixed time gap that is
+		// determined by the first matched edge
+		if ((i == 0) && (partial_solution_pos == 1)) {
+		  // this is the first edge we are matching, store the time gap
+		  // TODO: problem if the first two nodes are connected in both directions;
+		  //       which edge determines the time gap? have to check both?
+		  germ_delta = (VECTOR(*edge_timestamp1)[(long int)eid1]
+				    - VECTOR(*edge_timestamp2)[(long int)eid2]);
 		  if (germ_delta < 0) {
 		    success = 0;
-		    igraph_fsm_stats_subiso_failed_edge_color_count++;
+		    igraph_fsm_stats_subiso_failed_edge_timestamp_count++;
 		  }
 		}
-		if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
-		      VECTOR(*edge_color2)[(long int)eid2] + germ_delta)) {
+		if (success && (VECTOR(*edge_timestamp1)[(long int)eid1] !=
+		      VECTOR(*edge_timestamp2)[(long int)eid2] + germ_delta)) {
 		  success = 0;
-		  igraph_fsm_stats_subiso_failed_edge_color_count++;
+		  igraph_fsm_stats_subiso_failed_edge_timestamp_count++;
 		}
 	      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
-		if (edge_color1 && (i == 0) && (partial_solution_pos == 1)) {
-		  lfrminer_se_timestamp = VECTOR(*edge_color1)[(long int)eid1];
-		} else if (edge_color1 && (VECTOR(*edge_color1)[(long int)eid1]
-		      >= lfrminer_se_timestamp)) {
+		// edge timestamps have to be smaller than the timestamp of the (s, e) edge
+		if ((i == 0) && (partial_solution_pos == 1)) {
+		  // this is the (s,e) edge! store edge timestamp
+		  lfrminer_se_timestamp = VECTOR(*edge_timestamp1)[(long int)eid1];
+		} else if (VECTOR(*edge_timestamp1)[(long int)eid1] >= lfrminer_se_timestamp) {
 		  success = 0;
-		  igraph_fsm_stats_subiso_failed_edge_color_count++;
+		  igraph_fsm_stats_subiso_failed_edge_timestamp_count++;
 		}
-	      } else {
-		if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
-		      VECTOR(*edge_color2)[(long int)eid2])) {
-		  success = 0;
-		  igraph_fsm_stats_subiso_failed_edge_color_count++;
-		}
+	      }
+
+	      // check edge color
+	      if (success && edge_color1 && (VECTOR(*edge_color1)[(long int)eid1] !=
+	            VECTOR(*edge_color2)[(long int)eid2])) {
+		success = 0;
+		igraph_fsm_stats_subiso_failed_edge_color_count++;
 	      }
 	    }
 	  } else if (induced) {
@@ -554,7 +572,8 @@ int igraph_mib_support(const igraph_t *graph1,
       VECTOR(fixed)[1] = j; // force assignment: pattern node j
       iso = 0;
       if (igraph_i_subisomorphic(graph2, graph2, vertex_color2, vertex_color2, edge_color2,
-	      edge_color2, induced, IGRAPH_GSPAN_DEFAULT, /*variant_data=*/ NULL, &fixed, &iso)) {
+	      edge_color2, edge_timestamp2, edge_timestamp2, induced, variant /*for GERM*/,
+	      /*variant_data=*/ NULL, &fixed, &iso)) {
 	igraph_vector_destroy(&fixed);
 	igraph_matrix_destroy(&automorphic_nodes);
 	return 1;
@@ -588,7 +607,8 @@ int igraph_mib_support(const igraph_t *graph1,
       VECTOR(fixed)[1] = j; // force assignment: target node j
       iso = 0;
       if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
-	edge_color2, induced, variant, variant_data, &fixed, &iso)) {
+	      edge_color2, edge_timestamp1, edge_timestamp2, induced, variant, variant_data,
+	      &fixed, &iso)) {
         igraph_vector_destroy(&fixed);
         return 1;
       }
@@ -681,8 +701,8 @@ int igraph_egobased_support(const igraph_t *graph1,
   for (i = 0; i < igraph_vcount(graph1); i++) {
     VECTOR(fixed)[1] = i;
     if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
-		  edge_color1, edge_color2, induced, variant, variant_data,
-		  &fixed, &iso)) {
+		  edge_color1, edge_color2, edge_timestamp1, edge_timestamp2, induced,
+		  variant, variant_data, &fixed, &iso)) {
       return 1;
     }
     if (iso) {
@@ -717,8 +737,8 @@ int igraph_shallow_support(const igraph_t *graph1,
 			   igraph_integer_t min_supp) {
   igraph_bool_t iso;
   if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
-		edge_color1, edge_color2, induced, variant, variant_data,
-		/*fixed=*/ NULL, &iso)) {
+		edge_color1, edge_color2, edge_timestamp1, edge_timestamp2, induced,
+		variant, variant_data, /*fixed=*/ NULL, &iso)) {
     return 1;
   }
   if (iso) {
@@ -824,10 +844,8 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 		igraph_llist_ptr_t *result_vcolor_list,
 		igraph_llist_ptr_t *result_ecolor_list, igraph_llist_ptr_t *result_etimes_list,
 		igraph_llist_int_t *result_supp_list);
-int igraph_i_minmax_colors(const igraph_vector_ptr_t *vertex_colors,
-		       const igraph_vector_ptr_t *edge_colors,
-		       long int *max_vcolor, long int *max_ecolor,
-		       long int *min_vcolor, long int *min_ecolor);
+int igraph_i_vector_ptr_to_vector_int_minmax(const igraph_vector_ptr_t *vec_ptr, long int *min,
+		long int *max);
 int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
 		const igraph_vector_ptr_t *edge_colors, long int min_supp,
 		long int max_vcolor, long int max_ecolor,
@@ -1370,9 +1388,11 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     igraph_destroy(seed_graph);
     igraph_vector_int_destroy(seed_vcolors);
     igraph_vector_int_destroy(seed_ecolors);
+    igraph_vector_int_destroy(seed_etimes);
     igraph_free(seed_graph);
     igraph_free(seed_vcolors);
     igraph_free(seed_ecolors);
+    igraph_free(seed_etimes);
     igraph_fsm_stats_infrequent_count++;
     return 0;
   } else if ((variant == IGRAPH_GSPAN_LFRMINER) && !igraph_i_lfrminer_valid(seed_graph)) {
@@ -1383,9 +1403,11 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     igraph_destroy(seed_graph);
     igraph_vector_int_destroy(seed_vcolors);
     igraph_vector_int_destroy(seed_ecolors);
+    igraph_vector_int_destroy(seed_etimes);
     igraph_free(seed_graph);
     igraph_free(seed_vcolors);
     igraph_free(seed_ecolors);
+    igraph_free(seed_etimes);
     igraph_fsm_stats_lfrminer_invalid_count++;
     igraph_fsm_stats_frequent_count++;
   } else {
@@ -1393,6 +1415,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     igraph_llist_ptr_push_back(result_graph_list, seed_graph);
     igraph_llist_ptr_push_back(result_vcolor_list, seed_vcolors);
     igraph_llist_ptr_push_back(result_ecolor_list, seed_ecolors);
+    igraph_llist_ptr_push_back(result_etimes_list, seed_etimes);
     igraph_llist_int_push_back(result_supp_list, seed_supp);
     igraph_fsm_stats_frequent_count++;
   }
@@ -1491,7 +1514,6 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 	    igraph_i_dfscode_pop_back(seed_dfscode);
 	  }
 	}
-
 	break;
 
       case IGRAPH_GSPAN_GERM:
@@ -1558,6 +1580,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
 	    } // if (vertex_colors)
 	  } // edge timestamps
 	} // edge directions
+	break;
 
       case IGRAPH_GSPAN_EVOMINE:
       case IGRAPH_GSPAN_DEFAULT:
@@ -1749,6 +1772,7 @@ int igraph_i_dfscode_extend(const igraph_vector_ptr_t *graphs,
     } // directions
   } // loop over right-most path
   igraph_stack_int_destroy(&rightmost_path);
+  igraph_stack_int_destroy(&rightmost_path_colors);
 
   return 0;
 }
@@ -1870,52 +1894,26 @@ int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ec
 }
 
 
-int igraph_i_minmax_colors(const igraph_vector_ptr_t *vertex_colors,
-		       const igraph_vector_ptr_t *edge_colors,
-		       long int *max_vcolor, long int *max_ecolor,
-		       long int *min_vcolor, long int *min_ecolor) {
-  long int i, graph_count;
-  int cur_min, cur_max;
-  igraph_vector_int_t *colors;
+int igraph_i_vector_ptr_to_vector_int_minmax(const igraph_vector_ptr_t *vec_ptr,
+      long int *min, long int *max) {
+  long int i, n;
+  int cur_max, cur_min;
+  *min = INT_MAX;
+  *max = -1;
+  n = igraph_vector_ptr_size(vec_ptr);
 
-  *max_vcolor = -1;
-  *max_ecolor = -1;
-  *min_vcolor = INT_MAX;
-  *min_ecolor = INT_MAX;
-
-  if ((vertex_colors == NULL) && (edge_colors == NULL)) {
-    return 0;
-  } else if (vertex_colors != NULL) {
-    graph_count = igraph_vector_ptr_size(vertex_colors);
-  } else {
-    graph_count = igraph_vector_ptr_size(edge_colors);
-  }
-
-  for (i = 0; i < graph_count; i++) {
-    if (vertex_colors != NULL) {
-      colors = (igraph_vector_int_t *) VECTOR(*vertex_colors)[i];
-      IGRAPH_CHECK(igraph_vector_int_minmax(colors, &cur_min, &cur_max));
-      if (cur_max > *max_vcolor) {
-        *max_vcolor = cur_max;
-      }
-      if (cur_min < *min_vcolor) {
-        *min_vcolor = cur_min;
-      }
+  for (i = 0; i < n; i++) {
+    IGRAPH_CHECK(igraph_vector_int_minmax((igraph_vector_int_t *) VECTOR(*vec_ptr)[i],
+		    &cur_min, &cur_max));
+    if (cur_max > *max) {
+      *max = cur_max;
     }
-    if (edge_colors != NULL) {
-      colors = (igraph_vector_int_t *) VECTOR(*edge_colors)[i];
-      IGRAPH_CHECK(igraph_vector_int_minmax(colors, &cur_min, &cur_max));
-      if (cur_max > *max_ecolor) {
-        *max_ecolor = cur_max;
-      }
-      if (cur_min < *min_ecolor) {
-        *min_ecolor = cur_min;
-      }
+    if (cur_min < *min) {
+      *min = cur_min;
     }
   }
   return 0;
 }
-
 
 
 int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
@@ -1938,8 +1936,14 @@ int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
     graph_count = igraph_vector_ptr_size(edge_colors);
   }
 
-  igraph_vector_int_init(&vcolor_freq, max_vcolor+1);
-  igraph_vector_int_init(&ecolor_freq, max_ecolor+1);
+  if (vertex_colors != NULL) {
+    igraph_vector_int_init(&vcolor_freq, max_vcolor+1);
+    igraph_vector_int_resize(freq_vcolors, max_vcolor+2); // the last element is just for
+  }                                                       // guaranteed loop termination below
+  if (edge_colors != NULL) {
+    igraph_vector_int_init(&ecolor_freq, max_ecolor+1);
+    igraph_vector_int_resize(freq_ecolors, max_ecolor+2);
+  }
 
   // count all color occurrences
   for (i = 0; i < graph_count; i++) {
@@ -1958,8 +1962,6 @@ int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
   }
 
   // keep only frequent colors
-  igraph_vector_int_resize(freq_vcolors, max_vcolor+2); // the last element is just for
-  igraph_vector_int_resize(freq_ecolors, max_ecolor+2); // guaranteed loop termination below
   igraph_vector_int_fill(freq_vcolors, -1);
   igraph_vector_int_fill(freq_ecolors, -1);
 
@@ -2006,7 +2008,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 		 igraph_vector_ptr_t *frequent_subgraph_ecolors,
 		 igraph_vector_ptr_t *frequent_subgraph_etimes,
 		 igraph_vector_int_t *frequent_subgraph_supps) {
-  long int max_vcolor, max_ecolor, min_vcolor, min_ecolor;
+  long int max_vcolor, max_ecolor, min_vcolor, min_ecolor, min_etime, max_etime;
   void *variant_data;
   igraph_vector_int_t freq_ecolors, freq_vcolors;
   igraph_llist_ptr_t initial_patterns;
@@ -2016,9 +2018,13 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   // FIND FREQUENT VERTEX AND EDGE COLORS
 
-  // determine minimum/maximum vertex and edge color
-  igraph_i_minmax_colors(vertex_colors, edge_colors, &max_vcolor, &max_ecolor,
-			&min_vcolor, &min_ecolor);
+  // determine minimum/maximum colors and timestamps
+  if (vertex_colors != NULL)
+    igraph_i_vector_ptr_to_vector_int_minmax(vertex_colors, &min_vcolor, &max_vcolor);
+  if (edge_colors != NULL)
+    igraph_i_vector_ptr_to_vector_int_minmax(edge_colors, &min_ecolor, &max_ecolor);
+  if (edge_times != NULL)
+    igraph_i_vector_ptr_to_vector_int_minmax(edge_times, &min_etime, &max_etime);
 
   // determine frequent vertex and edge colors
   igraph_vector_int_init(&freq_vcolors, 0);
@@ -2028,7 +2034,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 
   if (variant == IGRAPH_GSPAN_GERM) {
     variant_data = igraph_Calloc(1, igraph_germ_data_t);
-    ((igraph_germ_data_t *)variant_data)->max_rel_timestamp = max_ecolor-min_ecolor;
+    ((igraph_germ_data_t *)variant_data)->max_rel_timestamp = max_etime-min_etime;
   } else if (variant == IGRAPH_GSPAN_EVOMINE) {
     variant_data = igraph_Calloc(1, igraph_evomine_data_t);
     ((igraph_evomine_data_t *)variant_data)->max_vcolor = max_vcolor;
@@ -2141,6 +2147,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  "   failed: %ld\n"
 	  "   failed edge existence: %ld\n"
 	  "   failed edge color: %ld\n"
+	  "   failed edge timestamp: %ld\n"
 	  "   failed node degree: %ld\n"
 	  "   failed node duplicate: %ld\n"
 	  "   failed node color: %ld\n"
@@ -2160,6 +2167,7 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
 	  igraph_fsm_stats_subiso_fail_count,
 	  igraph_fsm_stats_subiso_failed_edge_existence_count,
 	  igraph_fsm_stats_subiso_failed_edge_color_count,
+	  igraph_fsm_stats_subiso_failed_edge_timestamp_count,
 	  igraph_fsm_stats_subiso_failed_node_degree_count,
 	  igraph_fsm_stats_subiso_failed_node_duplicate_count,
 	  igraph_fsm_stats_subiso_failed_node_color_count,

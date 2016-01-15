@@ -63,9 +63,12 @@ typedef struct igraph_evomine_data_t {
 // HELPERS
 
 void igraph_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
-		    const igraph_vector_int_t *ecolors);
+		    const igraph_vector_int_t *ecolors, const igraph_vector_int_t *etimes);
 
 void igraph_print_stats(const igraph_t *g);
+
+int igraph_write_colored_graph(igraph_t *g, igraph_vector_int_t *vcolors,
+      igraph_vector_int_t *ecolors, igraph_vector_int_t *etimes, FILE *f);
 
 // O(1) access to in- and out-neighbors and degrees
 
