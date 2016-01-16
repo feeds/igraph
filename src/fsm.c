@@ -315,6 +315,12 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     partial_solution_pos = fixed_count;
     VECTOR(state_target_idx)[partial_solution_pos] = 0;
     while (1) {
+      if (partial_solution_pos == 1) {
+	// this will be the first matching edge, initialize data for GERM and LFR-Miner
+	germ_delta = -1;
+	lfrminer_se_timestamp = -1;
+      }
+
       success = 1;
       pattern_node = VECTOR(node_ordering)[partial_solution_pos];
       if (partial_solution_pos == 0) {
@@ -420,7 +426,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	  }
 	}
 
-	if (directed) { // check the other edge direction, too
+	if (success && directed) { // check the other edge direction, too
 	  igraph_get_eid(graph2, &eid2, pattern_node, other_pattern_node, /*directed*/1, /*err*/0);
 	  if (eid2 > -1) {
 	    igraph_get_eid(graph1, &eid1, target_node, other_target_node, /*directed*/1, /*err*/0);
@@ -432,10 +438,8 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	      if (variant == IGRAPH_GSPAN_GERM) {
 		// edge timestamps have to match with a fixed time gap that is
 		// determined by the first matched edge
-		if ((i == 0) && (partial_solution_pos == 1)) {
+		if ((i == 0) && (partial_solution_pos == 1) && (germ_delta < 0)) {
 		  // this is the first edge we are matching, store the time gap
-		  // TODO: problem if the first two nodes are connected in both directions;
-		  //       which edge determines the time gap? have to check both?
 		  germ_delta = (VECTOR(*edge_timestamp1)[(long int)eid1]
 				    - VECTOR(*edge_timestamp2)[(long int)eid2]);
 		  if (germ_delta < 0) {
@@ -450,7 +454,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 		}
 	      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
 		// edge timestamps have to be smaller than the timestamp of the (s, e) edge
-		if ((i == 0) && (partial_solution_pos == 1)) {
+		if ((i == 0) && (partial_solution_pos == 1) && (lfrminer_se_timestamp < 0)) {
 		  // this is the (s,e) edge! store edge timestamp
 		  lfrminer_se_timestamp = VECTOR(*edge_timestamp1)[(long int)eid1];
 		} else if (VECTOR(*edge_timestamp1)[(long int)eid1] >= lfrminer_se_timestamp) {
