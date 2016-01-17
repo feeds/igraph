@@ -403,8 +403,13 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	    } else if (variant == IGRAPH_GSPAN_LFRMINER) {
 	      // edge timestamps have to be smaller than the timestamp of the (s, e) edge
 	      if ((i == 0) && (partial_solution_pos == 1)) {
-		// this is the (s,e) edge! store edge timestamp
+		// this is the (s,e) edge, because we forced node e to be at pos 1 in ordering!
+		// store edge timestamp
 		lfrminer_se_timestamp = VECTOR(*edge_timestamp1)[(long int)eid1];
+	      } else if (lfrminer_se_timestamp < 0) {
+		// no (s,e) edge matched before? should never happen
+		printf("strange\n");
+		success = 0;
 	      } else if (VECTOR(*edge_timestamp1)[(long int)eid1] >= lfrminer_se_timestamp) {
 		success = 0;
 		igraph_fsm_stats_subiso_failed_edge_timestamp_count++;
@@ -418,11 +423,18 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	      igraph_fsm_stats_subiso_failed_edge_color_count++;
 	    }
 	  }
-	} else if (induced) {
-	  igraph_get_eid(graph1, &eid1, other_target_node, target_node, /*directed*/1, /*err*/0);
-	  if (eid1 > -1) {
+	} else {
+	  if ((variant == IGRAPH_GSPAN_LFRMINER) && (i == 0) && (partial_solution_pos == 1)) {
+	    // no (s,e) edge present, fail
 	    success = 0;
 	    igraph_fsm_stats_subiso_failed_edge_existence_count++;
+	  }
+	  if (success && induced) {
+	    igraph_get_eid(graph1, &eid1, other_target_node, target_node, /*directed*/1, /*err*/0);
+	    if (eid1 > -1) {
+	      success = 0;
+	      igraph_fsm_stats_subiso_failed_edge_existence_count++;
+	    }
 	  }
 	}
 
@@ -454,9 +466,10 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 		}
 	      } else if (variant == IGRAPH_GSPAN_LFRMINER) {
 		// edge timestamps have to be smaller than the timestamp of the (s, e) edge
-		if ((i == 0) && (partial_solution_pos == 1) && (lfrminer_se_timestamp < 0)) {
-		  // this is the (s,e) edge! store edge timestamp
-		  lfrminer_se_timestamp = VECTOR(*edge_timestamp1)[(long int)eid1];
+		if (lfrminer_se_timestamp < 0) {
+		  // no (s,e) matched before. we should never end up here.
+		  printf("strange\n");
+		  success = 0;
 		} else if (VECTOR(*edge_timestamp1)[(long int)eid1] >= lfrminer_se_timestamp) {
 		  success = 0;
 		  igraph_fsm_stats_subiso_failed_edge_timestamp_count++;
@@ -714,10 +727,10 @@ int igraph_egobased_support(const igraph_t *graph1,
     }
 
     // early pruning
-    if ((*support+igraph_vcount(graph1)-i-1) < min_supp) {
+    //if ((*support+igraph_vcount(graph1)-i-1) < min_supp) {
       // support cannot become larger than min_supp anymore
-      return 0;
-    }
+    //  return 0;
+    //}
   }
 
   igraph_fsm_stats_egobasedsuppport_count++;
