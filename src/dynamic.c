@@ -185,11 +185,12 @@ int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs) {
 
 // same as igraph_read_dynamic_velist, but directly computes the specified projection
 // to save memory
+// assert: input graph must have edge timestamps!
 int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directed,
-      igraph_projection_t proj_type,
+      igraph_bool_t has_vcolors, igraph_bool_t has_ecolors, igraph_projection_t proj_type,
       igraph_vector_ptr_t *graphs, igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors) {
   char buf[32];
-  long int v1, v2, i, max_vid, timestamp, last_timestamp;
+  long int i, i1, i2, i3, i4, max_vid, timestamp, last_timestamp, n_fields;
   char ve;
   igraph_t *graph1=NULL, *graph2=NULL;
   igraph_llist_int_t add_edges;
@@ -211,19 +212,32 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
   max_vid = -1;
   last_timestamp = -1;
   while (fgets(buf, 32, instream)) {
-    if (sscanf(buf, "%c %ld %ld %ld", &ve, &v1, &v2, &timestamp) < 1) {
+    n_fields = sscanf(buf, "%c %ld %ld %ld %ld", &ve, &i1, &i2, &i3, &i4);
+    if (n_fields < 2) {
       // ignore lines that cannot be parsed
       continue;
     }
     if (ve == 'v') {
-      if (v1 > max_vid) {
-	max_vid = v1;
+      if (i1 > max_vid) {
+	max_vid = i1;
+      }
+      if (has_vcolors) {
+	// TODO: store i2 in vcolor list (static!)
       }
     } else if (ve == 'e') {
       // we reached the first edge
-      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v1));
-      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v2));
-      last_timestamp = timestamp;
+      if (n_fields < 3) {
+        printf("parse error: edge definition incomplete, node ids missing\n");
+        return 1;
+      }
+      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i1));
+      IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i2));
+      if (has_ecolors) {
+	// TODO: store i3 in ecolor list (static!)
+	last_timestamp = i4;
+      } else {
+	last_timestamp = i3;
+      }
       break;
     } else {
       // ignore lines not starting with v or e
@@ -232,7 +246,8 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 
   // read more edges
   while (fgets(buf, 32, instream)) {
-    if (sscanf(buf, "%c %ld %ld %ld", &ve, &v1, &v2, &timestamp) < 1) {
+    n_fields = sscanf(buf, "%c %ld %ld %ld %ld", &ve, &i1, &i2, &i3, &i4);
+    if (n_fields < 2) {
       // ignore lines that cannot be parsed
       continue;
 
@@ -242,6 +257,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       continue;
     }
 
+    timestamp = (has_ecolors ? i4 : i3);
     if (timestamp > last_timestamp) {
       // we have processed all edges from this timestamp, construct graph
 
@@ -319,8 +335,8 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       return 1;
     }
 
-    IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v1));
-    IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, v2));
+    IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i1));
+    IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i2));
   }
 
   // process last timestamp
