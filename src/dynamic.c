@@ -186,27 +186,49 @@ int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs) {
 // same as igraph_read_dynamic_velist, but directly computes the specified projection
 // to save memory
 // assert: input graph must have edge timestamps!
+// assert: edge colors > 0
+//
+// input file should be in the format:
+//    v $vid [...]
+//    e $vid1 $vid2 [$color] $creation [$deletion [...]]
+// where -1 for $deletion means that the edge is never deleted and [...] is ignored. Edges
+// must be sorted by $creation. Node ids start with 0. Example (unlabelled edges):
+//    v 0
+//    v 1
+//    ...
+//    e 0 3 0 -1
+//    e 1 41 0 3
+//    e 1 8 1 -1
+//    ...
 int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directed,
       igraph_bool_t has_vcolors, igraph_bool_t has_ecolors, igraph_projection_t proj_type,
-      igraph_vector_ptr_t *graphs, igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors) {
+      igraph_vector_ptr_t *result_graphs, igraph_vector_ptr_t *result_vcolors,
+      igraph_vector_ptr_t *result_ecolors) {
   char buf[32];
   long int i, i1, i2, i3, i4, max_vid, timestamp, last_timestamp, n_fields;
+  long int max_ecolor = 0;
   char ve;
   igraph_t *graph1=NULL, *graph2=NULL;
-  igraph_llist_int_t add_edges;
+  igraph_llist_int_t add_edges, add_ecolors;
   igraph_llist_ptr_t result_list, result_vcolors_list, result_ecolors_list;
   igraph_vector_t edges;
-  igraph_vector_ptr_t tmp_graphs, tmp_vcolors, tmp_ecolors, tmp_db;
+  igraph_vector_int_t ecolors;
+  igraph_vector_ptr_t tmp_ug_graphs, tmp_ug_vcolors, tmp_ug_ecolors;
+  igraph_vector_ptr_t tmp_db, tmp_db_vcolors, tmp_db_ecolors;
 
   IGRAPH_CHECK(igraph_llist_int_init(&add_edges));
+  IGRAPH_CHECK(igraph_llist_int_init(&add_ecolors));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_list));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_vcolors_list));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_ecolors_list));
   IGRAPH_CHECK(igraph_vector_init(&edges, 0));
+  IGRAPH_CHECK(igraph_vector_int_init(&ecolors, 0));
   IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_db, 2));
-  IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_graphs, 0));
-  IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_vcolors, 0));
-  IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_ecolors, 0));
+  IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_db_vcolors, 2));
+  IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_db_ecolors, 2));
+  IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_ug_graphs, 0));
+  IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_ug_vcolors, 0));
+  IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_ug_ecolors, 0));
 
   // read vertices
   max_vid = -1;
@@ -233,7 +255,9 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i1));
       IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i2));
       if (has_ecolors) {
-	// TODO: store i3 in ecolor list (static!)
+	IGRAPH_CHECK(igraph_llist_int_push_back(&add_ecolors, i3));
+	if (i3 > max_ecolor)
+	  max_ecolor = i3;
 	last_timestamp = i4;
       } else {
 	last_timestamp = i3;
@@ -299,7 +323,9 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       //}
 
       // add edges to the current graph
+      // TODO: how to deal with edge colors???
       IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
+      IGRAPH_CHECK(igraph_llist_int_to_vector(&add_ecolors, &ecolors));
       if (graph2 == NULL) {
 	IGRAPH_CHECK(igraph_add_edges(graph1, &edges, 0));
 	printf("graph %ld: ", last_timestamp);
@@ -314,14 +340,18 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       if ((proj_type != IGRAPH_PROJECTION_NONE) && (graph2 != NULL)) {
 	VECTOR(tmp_db)[0] = graph1;
 	VECTOR(tmp_db)[1] = graph2;
+	if (has_ecolors) {
+	  VECTOR(tmp_db_ecolors)[0] = &ecolors;
+	  VECTOR(tmp_db_ecolors)[1] = &ecolors; // they are static
+	}
 	IGRAPH_CHECK(igraph_compute_dynamic_union_graph_projection(&tmp_db,
-		/*vcolors=*/ NULL, /*ecolors=*/ NULL, proj_type,
-		&tmp_graphs, /*result_vcolors=*/ NULL, &tmp_ecolors,
-		/*max_vcolor=*/ 0, /*max_ecolor=*/0));
-	for (i = 0; i < igraph_vector_ptr_size(&tmp_graphs); i++) {
-	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, VECTOR(tmp_graphs)[i]));
-	  //IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_vcolors_list, VECTOR(tmp_vcolors)[i]));
-	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_ecolors_list, VECTOR(tmp_ecolors)[i]));
+		/*vcolors=*/ NULL, (has_ecolors ? &tmp_db_ecolors : NULL), proj_type,
+		&tmp_ug_graphs, /*result_vcolors=*/ NULL, &tmp_ug_ecolors,
+		/*max_vcolor=*/ 0, (has_ecolors ? max_ecolor : 0)));
+	for (i = 0; i < igraph_vector_ptr_size(&tmp_ug_graphs); i++) {
+	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, VECTOR(tmp_ug_graphs)[i]));
+	  //IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_vcolors_list,VECTOR(tmp_ug_vcolors)[i]));
+	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_ecolors_list, VECTOR(tmp_ug_ecolors)[i]));
 	}
       }
 
@@ -337,6 +367,11 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 
     IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i1));
     IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i2));
+    if (has_ecolors) {
+      IGRAPH_CHECK(igraph_llist_int_push_back(&add_ecolors, i3));
+      if (i3 > max_ecolor)
+	max_ecolor = i3;
+    }
   }
 
   // process last timestamp
@@ -366,39 +401,50 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
     }
   }
   IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
+  IGRAPH_CHECK(igraph_llist_int_to_vector(&add_ecolors, &ecolors));
   IGRAPH_CHECK(igraph_add_edges(graph2, &edges, 0));
   printf("graph %ld: ", timestamp);
   igraph_print_stats(graph2);
   if (proj_type != IGRAPH_PROJECTION_NONE) {
     VECTOR(tmp_db)[0] = graph1;
     VECTOR(tmp_db)[1] = graph2;
+    if (has_ecolors) {
+      VECTOR(tmp_db_ecolors)[0] = &ecolors;
+      VECTOR(tmp_db_ecolors)[1] = &ecolors; // they are static
+    }
     IGRAPH_CHECK(igraph_compute_dynamic_union_graph_projection(&tmp_db,
-	    /*vcolors=*/ NULL, /*ecolors=*/ NULL, proj_type,
-	    &tmp_graphs, /*result_vcolors=*/ NULL, &tmp_ecolors,
-	    /*max_vcolor=*/ 0, /*max_ecolor=*/0));
-    for (i = 0; i < igraph_vector_ptr_size(&tmp_graphs); i++) {
-      IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, VECTOR(tmp_graphs)[i]));
-      //IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_vcolors_list, VECTOR(tmp_vcolors)[i]));
-      IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_ecolors_list, VECTOR(tmp_ecolors)[i]));
+	    /*vcolors=*/ NULL, (has_ecolors ? &tmp_db_ecolors : NULL), proj_type,
+	    &tmp_ug_graphs, /*result_vcolors=*/ NULL, &tmp_ug_ecolors,
+	    /*max_vcolor=*/ 0, (has_ecolors ? max_ecolor : 0)));
+    for (i = 0; i < igraph_vector_ptr_size(&tmp_ug_graphs); i++) {
+      IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, VECTOR(tmp_ug_graphs)[i]));
+      //IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_vcolors_list, VECTOR(tmp_ug_vcolors)[i]));
+      IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_ecolors_list, VECTOR(tmp_ug_ecolors)[i]));
     }
   }
 
   // convert lists into vector for output
-  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_list, graphs));
-  //IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_vcolors_list, vcolors));
-  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_ecolors_list, ecolors));
+  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_list, result_graphs));
+  //IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_vcolors_list, result_vcolors));
+  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_ecolors_list, result_ecolors));
+
+  printf("+++ ecolors %ld min %ld max %ld\n", igraph_vector_int_size(&ecolors),
+      igraph_vector_int_min(&ecolors), igraph_vector_int_max(&ecolors));
 
   // TODO: process deleted edges
 
   igraph_llist_int_destroy(&add_edges);
+  igraph_llist_int_destroy(&add_ecolors);
   igraph_llist_ptr_destroy(&result_list);
   igraph_llist_ptr_destroy(&result_vcolors_list);
   igraph_llist_ptr_destroy(&result_ecolors_list);
   igraph_vector_destroy(&edges);
   igraph_vector_ptr_destroy(&tmp_db);
-  igraph_vector_ptr_destroy(&tmp_graphs);
-  igraph_vector_ptr_destroy(&tmp_vcolors);
-  igraph_vector_ptr_destroy(&tmp_ecolors);
+  igraph_vector_ptr_destroy(&tmp_db_vcolors);
+  igraph_vector_ptr_destroy(&tmp_db_ecolors);
+  igraph_vector_ptr_destroy(&tmp_ug_graphs);
+  igraph_vector_ptr_destroy(&tmp_ug_vcolors);
+  igraph_vector_ptr_destroy(&tmp_ug_ecolors);
 
   return 0;
 }
@@ -932,7 +978,7 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
 	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
 	       NULL, (igraph_vector_int_t *) VECTOR(*ecolors)[t],
 	       (igraph_t *) VECTOR(*graphs)[t+1],
-	       (igraph_vector_int_t *) VECTOR(*vcolors)[t+1],
+	       NULL,
 	       (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
 	       *node_selector, union_graph, union_graph_vcolors, union_graph_ecolors,
 	       max_vcolor, max_ecolor);
