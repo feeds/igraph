@@ -310,10 +310,13 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	}
       }
 
-      // if current and the last timestamp are not consecutive, add copies
+      // TODO: if current and the last timestamp are not consecutive, add copies
       // of the current graph to the list to fill the gap
+      // NOTE: this is only a problem if we have timesteps that contain only edge deletions
+      //       and no insertions
       if (last_timestamp < timestamp-1) {
-	IGRAPH_ERROR("gaps in timesteps not supported yet", IGRAPH_UNIMPLEMENTED);
+	//IGRAPH_ERROR("gaps in timesteps not supported yet", IGRAPH_UNIMPLEMENTED);
+	printf("gap in edge timestamp, silently ignoring\n");
       }
       //while (last_timestamp < timestamp-1) {
 	//graph_copy = igraph_Calloc(1, igraph_t);
@@ -428,7 +431,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
   //IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_vcolors_list, result_vcolors));
   IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_ecolors_list, result_ecolors));
 
-  printf("+++ ecolors %ld min %ld max %ld\n", igraph_vector_int_size(&ecolors),
+  printf("+++ ecolors %ld min %d max %d\n", igraph_vector_int_size(&ecolors),
       igraph_vector_int_min(&ecolors), igraph_vector_int_max(&ecolors));
 
   // TODO: process deleted edges
