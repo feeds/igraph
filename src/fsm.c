@@ -2006,8 +2006,10 @@ int igraph_i_frequent_colors(const igraph_vector_ptr_t *vertex_colors,
     }
   }
 
-  igraph_vector_int_destroy(&vcolor_freq);
-  igraph_vector_int_destroy(&ecolor_freq);
+  if (vertex_colors != NULL)
+    igraph_vector_int_destroy(&vcolor_freq);
+  if (edge_colors != NULL)
+    igraph_vector_int_destroy(&ecolor_freq);
 
   return 0;
 }
