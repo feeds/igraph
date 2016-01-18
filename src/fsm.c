@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h> // memcpy
 #include <limits.h> // INT_MAX
+#include <omp.h>
 #include "igraph_fsm.h"
 #include "igraph_matrix.h"
 #include "igraph_stack.h"
@@ -153,7 +154,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 			   igraph_bool_t induced,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
-			   igraph_vector_t *fixed,
+			   long int *fixed,
 			   igraph_bool_t *iso) {
   long int vcount1 = igraph_vcount(graph1);
   long int vcount2 = igraph_vcount(graph2);
@@ -207,7 +208,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
     IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, j));
     fixed_count = 0;
   } else {
-    IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, VECTOR(*fixed)[0]));
+    IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, fixed[0]));
     fixed_count = 1;
   }
   IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, -1)); // first node has no predecessor
@@ -273,8 +274,8 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   // STEP 1: check the fixed assignment for consistency and add to partial solution
 
   if (fixed != NULL) {
-    pattern_node = VECTOR(*fixed)[0];
-    target_node = VECTOR(*fixed)[1];
+    pattern_node = fixed[0];
+    target_node = fixed[1];
 
     // check color
     if (vertex_color1 && (VECTOR(*vertex_color1)[target_node]
@@ -572,26 +573,24 @@ int igraph_mib_support(const igraph_t *graph1,
 		       void *variant_data,
 		       igraph_integer_t *support,
 		       igraph_integer_t min_supp) {
-  igraph_vector_t fixed;
+  long int fixed[2];
   igraph_bool_t iso;
+  int abort_status;
   long int vcount1 = igraph_vcount(graph1), vcount2 = igraph_vcount(graph2);
   long int i, j, automorphic_node;
   igraph_integer_t cur_supp, cur_count;
-
-  IGRAPH_CHECK(igraph_vector_init(&fixed, 2));
 
   // find all automorphic pattern nodes
   igraph_matrix_t automorphic_nodes;
   IGRAPH_CHECK(igraph_matrix_init(&automorphic_nodes, vcount2, vcount2));
   for (i = 0; i < vcount2; i++) {
-    VECTOR(fixed)[0] = i; // force assignment: pattern node i
+    fixed[0] = i; // force assignment: pattern node i
     for (j = 0; j < i; j++) {
-      VECTOR(fixed)[1] = j; // force assignment: pattern node j
+      fixed[1] = j; // force assignment: pattern node j
       iso = 0;
       if (igraph_i_subisomorphic(graph2, graph2, vertex_color2, vertex_color2, edge_color2,
 	      edge_color2, edge_timestamp2, edge_timestamp2, induced, variant /*for GERM*/,
-	      /*variant_data=*/ NULL, &fixed, &iso)) {
-	igraph_vector_destroy(&fixed);
+	      /*variant_data=*/ NULL, fixed, &iso)) {
 	igraph_matrix_destroy(&automorphic_nodes);
 	return 1;
       }
@@ -603,8 +602,13 @@ int igraph_mib_support(const igraph_t *graph1,
 
   // test all possible pairs (pattern node i, target node j) for isomorphism
   cur_supp = -1;
+  abort_status = 0; // 0=run, 1=early termination, 2=fail
+  #pragma omp parallel for private(j, automorphic_node, cur_count, iso, fixed)
   for (i = 0; i < vcount2; i++) {
-    VECTOR(fixed)[0] = i; // force assignment: pattern node i
+    if (abort_status > 0)
+      continue; // for OpenMP
+
+    fixed[0] = i; // force assignment: pattern node i
 
     // check if this node is isomorphic to a previously checked node
     automorphic_node = -1;
@@ -621,13 +625,14 @@ int igraph_mib_support(const igraph_t *graph1,
     // no automorphic node found, test all possible target assignments
     cur_count = 0;
     for (j = 0; j < vcount1; j++) {
-      VECTOR(fixed)[1] = j; // force assignment: target node j
+      fixed[1] = j; // force assignment: target node j
       iso = 0;
       if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
 	      edge_color2, edge_timestamp1, edge_timestamp2, induced, variant, variant_data,
-	      &fixed, &iso)) {
-        igraph_vector_destroy(&fixed);
-        return 1;
+	      fixed, &iso)) {
+	#pragma omp critical (status)
+	abort_status = 2;
+	#pragma omp flush(abort_status)
       }
       if (iso) {
 	igraph_fsm_stats_mibsupport_subiso_success_count++;
@@ -654,27 +659,42 @@ int igraph_mib_support(const igraph_t *graph1,
     }
 
     // keep track of current minimum number of target node assignments
-    if (cur_supp < 0 || cur_count < cur_supp) {
-      cur_supp = cur_count;
-    }
+    #pragma omp critical (update_support)
+    {
+      if (cur_supp < 0 || cur_count < cur_supp) {
+	cur_supp = cur_count;
+      }
 
-    // early termination: the support can only be smaller than or equal to
-    // VECTOR(target_counts)[i].
-    // if that value is already smaller than min_supp, we don't need to continue.
-    if (min_supp >= 0 && cur_supp < min_supp) {
-      //printf("terminate\n");
-      *support = 0;
-      igraph_vector_destroy(&fixed);
-      igraph_matrix_destroy(&automorphic_nodes);
-      return 0;
+      // early termination: the support can only be smaller than or equal to
+      // VECTOR(target_counts)[i].
+      // if that value is already smaller than min_supp, we don't need to continue.
+      if (min_supp >= 0 && cur_supp < min_supp) {
+	//printf("terminate\n");
+	#pragma omp critical (status)
+	abort_status = 1; // early termination
+	#pragma omp flush(abort_status)
+      }
     }
+  }
+
+  igraph_matrix_destroy(&automorphic_nodes);
+
+  if (abort_status == 1) {
+    // early termination: a pattern node was discovered that can be matched to less
+    // than min_supp target nodes, so the pattern cannot be frequent. however, there
+    // might be nodes with even less target nodes, which we did not check.
+    *support = 0;
+    return 0;
+  }
+
+  if (abort_status == 2) {
+    // an error occurred during subisomorphism check
+    return 1;
   }
 
   *support = cur_supp;
   igraph_fsm_stats_mibsupport_count++;
 
-  igraph_vector_destroy(&fixed);
-  igraph_matrix_destroy(&automorphic_nodes);
   return 0;
 }
 
@@ -699,31 +719,41 @@ int igraph_egobased_support(const igraph_t *graph1,
 			   igraph_integer_t *support,
 			   igraph_integer_t min_supp) {
   long int i;
-  igraph_vector_t fixed;
-  igraph_bool_t iso;
-
-  IGRAPH_CHECK(igraph_vector_init(&fixed, 2));
+  long int fixed[2], start_node;
+  igraph_bool_t iso, abort_status;
 
   // determine start node in graph2 (node label 0)
+  start_node = -1;
   for (i = 0; i < igraph_vcount(graph2); i++) {
     if (VECTOR(*vertex_color2)[i] == 0) {
-      VECTOR(fixed)[0] = i;
+      start_node = i;
       break;
     }
+  }
+  if (start_node < 0) {
+    IGRAPH_ERROR("no start node in pattern (set vcolor = 2 for exactly one node))", IGRAPH_EINVAL);
   }
 
   // check for all possible target nodes whether they can be used as
   // a start node for the pattern in graph2
   *support = 0;
+  abort_status = 0;
+  #pragma omp parallel for private(fixed, iso)
   for (i = 0; i < igraph_vcount(graph1); i++) {
-    VECTOR(fixed)[1] = i;
+    if (abort_status)
+      continue;
+
+    fixed[0] = start_node;
+    fixed[1] = i;
     if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
 		  edge_color1, edge_color2, edge_timestamp1, edge_timestamp2, induced,
-		  variant, variant_data, &fixed, &iso)) {
-      return 1;
+		  variant, variant_data, fixed, &iso)) {
+      abort_status = 1;
+      #pragma omp flush(abort_status)
     }
     if (iso) {
-      *support = *support + 1;
+      #pragma omp atomic
+      (*support)++;
     }
 
     // early pruning
@@ -731,6 +761,11 @@ int igraph_egobased_support(const igraph_t *graph1,
       // support cannot become larger than min_supp anymore
     //  return 0;
     //}
+  }
+
+  if (abort_status) {
+    // an error occurred during subisomorphism check
+    return 1;
   }
 
   igraph_fsm_stats_egobasedsuppport_count++;

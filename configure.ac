@@ -314,6 +314,9 @@ else
   internal_glpk=no
 fi
 
+AC_OPENMP
+CFLAGS="${CFLAGS} ${OPENMP_CFLAGS}"
+
 AM_CONDITIONAL(INTERNAL_GLPK, test x$internal_glpk = xyes)
 AM_CONDITIONAL(INTERNAL_ARPACK, test x$internal_arpack = xyes)
 AM_CONDITIONAL(INTERNAL_LAPACK, test x$internal_lapack = xyes)
