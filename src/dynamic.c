@@ -21,6 +21,7 @@
 */
 
 #include <stdlib.h>
+#include <limits.h>
 #include "igraph_fsm.h"
 #include "igraph_dynamic.h"
 #include "igraph_interface.h"
@@ -264,8 +265,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
     } else if (ve == 'e') {
       // we reached the first edge
       if (n_fields < 3) {
-        printf("parse error: edge definition incomplete, node ids missing\n");
-        return 1;
+	IGRAPH_ERROR("edge definition incomplete, node ids missing", IGRAPH_PARSEERROR);
       }
       IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i1));
       IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i2));
@@ -274,7 +274,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	if (i3 > max_ecolor)
 	  max_ecolor = i3;
 	last_timestamp = i4;
-	if (has_etimesdel && (i5 > 0)) {
+	if (has_etimesdel && (i5 > last_timestamp)) {
 	  // init edge list for new deletion timestamp and mark edge for deletion at time i5
 	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&del_edges,igraph_Calloc(1, igraph_llist_int_t)));
 	  IGRAPH_CHECK(igraph_llist_int_init((igraph_llist_int_t *) del_edges.first->data));
@@ -284,7 +284,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	}
       } else {
 	last_timestamp = i3;
-	if (has_etimesdel && (i4 > 0)) {
+	if (has_etimesdel && (i4 > last_timestamp)) {
 	  // init edge list for new deletion timestamp and mark edge (eid 0) for deletion at time i4
 	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&del_edges,igraph_Calloc(1, igraph_llist_int_t)));
 	  IGRAPH_CHECK(igraph_llist_int_init((igraph_llist_int_t *) del_edges.first->data));
@@ -342,21 +342,6 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	}
       }
 
-      // TODO: if current and the last timestamp are not consecutive, add copies
-      // of the current graph to the list to fill the gap
-      // NOTE: this is only a problem if we have timesteps that contain only edge deletions
-      //       and no insertions
-      if (last_timestamp < timestamp-1) {
-	//IGRAPH_ERROR("gaps in timesteps not supported yet", IGRAPH_UNIMPLEMENTED);
-	printf("gap in edge timestamp, silently ignoring\n");
-      }
-      //while (last_timestamp < timestamp-1) {
-	//graph_copy = igraph_Calloc(1, igraph_t);
-	//IGRAPH_CHECK(igraph_copy(graph_copy, graph));
-	//IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, graph_copy));
-	//last_timestamp++;
-      //}
-
       // prepare edge insertions
       IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges, 0));
       IGRAPH_CHECK(igraph_llist_int_to_vector(&add_ecolors, &ecolors, 0));
@@ -364,22 +349,28 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       // prepare edge deletions
       IGRAPH_CHECK(igraph_vector_resize(&deletions, 0));
       if (has_etimesdel) {
-	// check if there are edge deletions at this timestamp
+	// check if there are remaining edge deletions to perform at this timestamp
+	// NOTE: if there are timestamps with only edge deletions, these deletions are
+	//       peformed at the next timestamp that has insertions
 	for (item_ptr = del_edges.first; item_ptr != NULL; item_ptr = item_ptr->next) {
-	  if (((igraph_llist_int_t *) item_ptr->data)->first->data == last_timestamp) {
-	    break;
-	  }
-	}
-	if (item_ptr != NULL) {
-	  // retrieve eids
-	  igraph_vector_resize(&deletions,
-		(igraph_llist_int_size((igraph_llist_int_t *) item_ptr->data)-1)/2);
-	  for (item_int = ((igraph_llist_int_t *)item_ptr->data)->first->next, i = 0;
-		      item_int != NULL;
-		      item_int = item_int->next->next, i++) {
-	    IGRAPH_CHECK(igraph_get_eid(((graph2 != NULL) ? graph2 : graph1),
-		  &eid, item_int->data, item_int->next->data, 1, 1));
-	    VECTOR(deletions)[i] = eid;
+	  if (((igraph_llist_int_t *) item_ptr->data)->first->data <= last_timestamp) {
+	    if (item_ptr != NULL) {
+	      igraph_vector_resize(&deletions, igraph_vector_size(&deletions)
+		    + (igraph_llist_int_size((igraph_llist_int_t *) item_ptr->data)-1)/2);
+	      // retrieve eids
+	      for (item_int = ((igraph_llist_int_t *)item_ptr->data)->first->next, i = 0;
+		 	  item_int != NULL;
+		 	  item_int = item_int->next->next, i++) {
+		IGRAPH_CHECK(igraph_get_eid(((graph2 != NULL) ? graph2 : graph1),
+		      &eid, item_int->data, item_int->next->data, 1, 1));
+		VECTOR(deletions)[igraph_vector_size(&deletions)
+		    - (igraph_llist_int_size((igraph_llist_int_t *) item_ptr->data)-1)/2+i] = eid;
+	      }
+	      // destroy deletion list (and add dummy)
+	      igraph_llist_int_destroy((igraph_llist_int_t *)item_ptr->data);
+	      igraph_llist_int_init((igraph_llist_int_t *)item_ptr->data);
+	      igraph_llist_int_push_back((igraph_llist_int_t *)item_ptr->data, INT_MAX);
+	    }
 	  }
 	}
       }
@@ -423,6 +414,12 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       igraph_llist_int_destroy(&add_edges);
       IGRAPH_CHECK(igraph_llist_int_init(&add_edges));
 
+      if (last_timestamp < timestamp-1) {
+	// current and last timestamp are not consecutive
+	// NOTE: this is only a problem if we have timesteps that contain only edge deletions
+	//       and no insertions
+	printf("+++ gap in edge timestamp, ignoring\n");
+      }
       last_timestamp = timestamp;
     } else if (timestamp < last_timestamp) {
       IGRAPH_ERROR("edges not sorted by timestamp", IGRAPH_PARSEERROR);
@@ -436,7 +433,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       IGRAPH_CHECK(igraph_llist_int_push_back(&add_ecolors, i3));
       if (i3 > max_ecolor)
 	max_ecolor = i3;
-      if (has_etimesdel && (i5 > 0)) {
+      if (has_etimesdel && (i5 > last_timestamp)) {
 	// check if the deletion timestamp i5 already exists in list
 	for (item_ptr = del_edges.first; item_ptr != NULL; item_ptr = item_ptr->next) {
 	  if (((igraph_llist_int_t *) item_ptr->data)->first->data == i5) {
@@ -455,7 +452,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.last->data,i2));
 	}
       }
-    } else if (has_etimesdel && (i4 > 0)) {
+    } else if (has_etimesdel && (i4 > last_timestamp)) {
       // check if the deletion timestamp i4 already exists in list
       for (item_ptr = del_edges.first; item_ptr != NULL; item_ptr = item_ptr->next) {
 	if (((igraph_llist_int_t *) item_ptr->data)->first->data == i4) {
@@ -507,19 +504,24 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
   IGRAPH_CHECK(igraph_vector_resize(&deletions, 0));
   if (has_etimesdel) {
     for (item_ptr = del_edges.first; item_ptr != NULL; item_ptr = item_ptr->next) {
-      if (((igraph_llist_int_t *) item_ptr->data)->first->data == last_timestamp) {
-	break;
-      }
-    }
-    if (item_ptr != NULL) {
-      igraph_vector_resize(&deletions,
-	      (igraph_llist_int_size((igraph_llist_int_t *) item_ptr->data)-1)/2);
-      for (item_int = ((igraph_llist_int_t *) item_ptr->data)->first->next, i = 0;
-		  item_int != NULL;
-		  item_int = item_int->next->next, i++) {
-	IGRAPH_CHECK(igraph_get_eid(((graph2 != NULL) ? graph2 : graph1),
-	      &eid, item_int->data, item_int->next->data, 1, 1));
-	VECTOR(deletions)[i] = eid;
+      if (((igraph_llist_int_t *) item_ptr->data)->first->data <= last_timestamp) {
+	if (item_ptr != NULL) {
+	  igraph_vector_resize(&deletions, igraph_vector_size(&deletions)
+		+ (igraph_llist_int_size((igraph_llist_int_t *) item_ptr->data)-1)/2);
+	  // retrieve eids
+	  for (item_int = ((igraph_llist_int_t *)item_ptr->data)->first->next, i = 0;
+		      item_int != NULL;
+		      item_int = item_int->next->next, i++) {
+	    IGRAPH_CHECK(igraph_get_eid(((graph2 != NULL) ? graph2 : graph1),
+		  &eid, item_int->data, item_int->next->data, 1, 1));
+	    VECTOR(deletions)[igraph_vector_size(&deletions)
+		- (igraph_llist_int_size((igraph_llist_int_t *) item_ptr->data)-1)/2+i] = eid;
+	  }
+	  // destroy deletion list (and add dummy)
+	  igraph_llist_int_destroy((igraph_llist_int_t *)item_ptr->data);
+	  igraph_llist_int_init((igraph_llist_int_t *)item_ptr->data);
+	  igraph_llist_int_push_back((igraph_llist_int_t *)item_ptr->data, INT_MAX);
+	}
       }
     }
   }
