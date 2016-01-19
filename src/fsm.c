@@ -2144,15 +2144,15 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   // store result in the provided containers (if provided...)
   // the user has to free the allocated memory
   if (frequent_subgraphs != NULL)
-    IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_graph_list, frequent_subgraphs));
+    IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_graph_list, frequent_subgraphs, 0));
   if (frequent_subgraph_vcolors != NULL)
-    IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_vcolor_list, frequent_subgraph_vcolors));
+    IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_vcolor_list, frequent_subgraph_vcolors, 0));
   if (frequent_subgraph_ecolors != NULL)
-    IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_ecolor_list, frequent_subgraph_ecolors));
+    IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_ecolor_list, frequent_subgraph_ecolors, 0));
   if (frequent_subgraph_etimes != NULL)
-    IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_etimes_list, frequent_subgraph_etimes));
+    IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_etimes_list, frequent_subgraph_etimes, 0));
   if (frequent_subgraph_supps != NULL)
-    IGRAPH_CHECK(igraph_llist_int_to_vector(&result_supp_list, frequent_subgraph_supps));
+    IGRAPH_CHECK(igraph_llist_int_to_vector(&result_supp_list, frequent_subgraph_supps, 0));
 
   // CLEAN UP
 

@@ -59,13 +59,20 @@
 #include "igraph_pmt_off.h"
 #undef BASE_PTR
 
-int igraph_llist_int_to_vector_real(igraph_llist_int_t *llist, igraph_vector_t *vector) {
-  IGRAPH_CHECK(igraph_vector_resize(vector, igraph_llist_int_size(llist)));
+int igraph_llist_int_to_vector_real(igraph_llist_int_t *llist, igraph_vector_t *vector, int skip) {
+  IGRAPH_CHECK(igraph_vector_resize(vector, igraph_llist_int_size(llist)-skip));
   igraph_llist_item_int_t *item;
   long int i;
-  for (item = llist->first, i = 0; item != NULL; item = item->next, i++) {
+
+  item = llist->first;
+  while ((skip > 0) && (item != NULL)) {
+    item = item->next;
+    skip--;
+  }
+  for (i = 0; item != NULL; item = item->next, i++) {
     VECTOR(*vector)[i] = item->data;
   }
+
   return 0;
 }
 

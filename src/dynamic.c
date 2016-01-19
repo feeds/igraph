@@ -133,7 +133,7 @@ int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs) {
       }
 
       // add edges to the current graph
-      IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
+      IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges, 0));
       IGRAPH_CHECK(igraph_add_edges(graph, &edges, 0));
 
       // append to graph list
@@ -166,12 +166,12 @@ int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs) {
     IGRAPH_CHECK(igraph_llist_ptr_push_back(&graph_list, graph_copy));
     last_timestamp++;
   }
-  IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
+  IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges, 0));
   IGRAPH_CHECK(igraph_add_edges(graph, &edges, 0));
   IGRAPH_CHECK(igraph_llist_ptr_push_back(&graph_list, graph));
 
   // convert list into vector for output
-  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&graph_list, graphs));
+  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&graph_list, graphs, 0));
 
   // TODO: process deleted edges
 
@@ -187,6 +187,7 @@ int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs) {
 // to save memory
 // assert: input graph must have edge timestamps!
 // assert: edge colors > 0
+// assert: maximum edge color appears in first timestep
 //
 // input file should be in the format:
 //    v $vid [...]
@@ -201,27 +202,40 @@ int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs) {
 //    e 1 8 1 -1
 //    ...
 int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directed,
-      igraph_bool_t has_vcolors, igraph_bool_t has_ecolors, igraph_projection_t proj_type,
+      igraph_bool_t has_vcolors, igraph_bool_t has_ecolors, igraph_bool_t has_etimesdel,
+      igraph_projection_t proj_type,
       igraph_vector_ptr_t *result_graphs, igraph_vector_ptr_t *result_vcolors,
       igraph_vector_ptr_t *result_ecolors) {
   char buf[32];
-  long int i, i1, i2, i3, i4, max_vid, timestamp, last_timestamp, n_fields;
+  long int i, i1, i2, i3, i4, i5, max_vid, timestamp, last_timestamp, n_fields;
   long int max_ecolor = 0;
+  igraph_integer_t eid;
   char ve;
   igraph_t *graph1=NULL, *graph2=NULL;
   igraph_llist_int_t add_edges, add_ecolors;
+  igraph_llist_ptr_t del_edges; // holds a list of integer lists l, with l->first = del_time,
+                                // followed by all edges (v1, v2) to delete at del_time
   igraph_llist_ptr_t result_list, result_vcolors_list, result_ecolors_list;
-  igraph_vector_t edges;
+  igraph_vector_t edges, deletions;
   igraph_vector_int_t ecolors;
   igraph_vector_ptr_t tmp_ug_graphs, tmp_ug_vcolors, tmp_ug_ecolors;
   igraph_vector_ptr_t tmp_db, tmp_db_vcolors, tmp_db_ecolors;
+  igraph_llist_item_ptr_t *item_ptr;
+  igraph_llist_item_int_t *item_int;
+
+  if (has_etimesdel && has_ecolors) {
+    IGRAPH_ERROR("velist reader with edge colors and deletions not implemented",
+	IGRAPH_UNIMPLEMENTED);
+  }
 
   IGRAPH_CHECK(igraph_llist_int_init(&add_edges));
   IGRAPH_CHECK(igraph_llist_int_init(&add_ecolors));
+  IGRAPH_CHECK(igraph_llist_ptr_init(&del_edges));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_list));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_vcolors_list));
   IGRAPH_CHECK(igraph_llist_ptr_init(&result_ecolors_list));
   IGRAPH_CHECK(igraph_vector_init(&edges, 0));
+  IGRAPH_CHECK(igraph_vector_init(&deletions, 0));
   IGRAPH_CHECK(igraph_vector_int_init(&ecolors, 0));
   IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_db, 2));
   IGRAPH_CHECK(igraph_vector_ptr_init(&tmp_db_vcolors, 2));
@@ -234,7 +248,8 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
   max_vid = -1;
   last_timestamp = -1;
   while (fgets(buf, 32, instream)) {
-    n_fields = sscanf(buf, "%c %ld %ld %ld %ld", &ve, &i1, &i2, &i3, &i4);
+    i1 = -1; i2 = -1; i3 = -1; i4 = -1; i5 = -1;
+    n_fields = sscanf(buf, "%c %ld %ld %ld %ld %ld", &ve, &i1, &i2, &i3, &i4, &i5);
     if (n_fields < 2) {
       // ignore lines that cannot be parsed
       continue;
@@ -259,8 +274,24 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	if (i3 > max_ecolor)
 	  max_ecolor = i3;
 	last_timestamp = i4;
+	if (has_etimesdel && (i5 > 0)) {
+	  // init edge list for new deletion timestamp and mark edge for deletion at time i5
+	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&del_edges,igraph_Calloc(1, igraph_llist_int_t)));
+	  IGRAPH_CHECK(igraph_llist_int_init((igraph_llist_int_t *) del_edges.first->data));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.first->data,i5));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.first->data,i1));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.first->data,i2));
+	}
       } else {
 	last_timestamp = i3;
+	if (has_etimesdel && (i4 > 0)) {
+	  // init edge list for new deletion timestamp and mark edge (eid 0) for deletion at time i4
+	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&del_edges,igraph_Calloc(1, igraph_llist_int_t)));
+	  IGRAPH_CHECK(igraph_llist_int_init((igraph_llist_int_t *) del_edges.first->data));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.first->data,i4));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.first->data,i1));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.first->data,i2));
+	}
       }
       break;
     } else {
@@ -270,7 +301,8 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 
   // read more edges
   while (fgets(buf, 32, instream)) {
-    n_fields = sscanf(buf, "%c %ld %ld %ld %ld", &ve, &i1, &i2, &i3, &i4);
+    i1 = -1; i2 = -1; i3 = -1; i4 = -1; i5 = -1;
+    n_fields = sscanf(buf, "%c %ld %ld %ld %ld %ld", &ve, &i1, &i2, &i3, &i4, &i5);
     if (n_fields < 2) {
       // ignore lines that cannot be parsed
       continue;
@@ -325,17 +357,46 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	//last_timestamp++;
       //}
 
-      // add edges to the current graph
-      // TODO: how to deal with edge colors???
-      IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
-      IGRAPH_CHECK(igraph_llist_int_to_vector(&add_ecolors, &ecolors));
+      // prepare edge insertions
+      IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges, 0));
+      IGRAPH_CHECK(igraph_llist_int_to_vector(&add_ecolors, &ecolors, 0));
+
+      // prepare edge deletions
+      IGRAPH_CHECK(igraph_vector_resize(&deletions, 0));
+      if (has_etimesdel) {
+	// check if there are edge deletions at this timestamp
+	for (item_ptr = del_edges.first; item_ptr != NULL; item_ptr = item_ptr->next) {
+	  if (((igraph_llist_int_t *) item_ptr->data)->first->data == last_timestamp) {
+	    break;
+	  }
+	}
+	if (item_ptr != NULL) {
+	  // retrieve eids
+	  igraph_vector_resize(&deletions,
+		(igraph_llist_int_size((igraph_llist_int_t *) item_ptr->data)-1)/2);
+	  for (item_int = ((igraph_llist_int_t *)item_ptr->data)->first->next, i = 0;
+		      item_int != NULL;
+		      item_int = item_int->next->next, i++) {
+	    IGRAPH_CHECK(igraph_get_eid(((graph2 != NULL) ? graph2 : graph1),
+		  &eid, item_int->data, item_int->next->data, 1, 1));
+	    VECTOR(deletions)[i] = eid;
+	  }
+	}
+      }
+
+      // perform insertions/deletions
+      // TODO: ecolor deletions
       if (graph2 == NULL) {
+	IGRAPH_CHECK(igraph_delete_edges(graph1, igraph_ess_vector(&deletions)));
 	IGRAPH_CHECK(igraph_add_edges(graph1, &edges, 0));
-	printf("graph %ld: ", last_timestamp);
+	printf("graph %ld (+%ld, -%ld): ", last_timestamp, igraph_vector_size(&edges)/2,
+		  igraph_vector_size(&deletions));
 	igraph_print_stats(graph1);
       } else {
+	IGRAPH_CHECK(igraph_delete_edges(graph2, igraph_ess_vector(&deletions)));
 	IGRAPH_CHECK(igraph_add_edges(graph2, &edges, 0));
-	printf("graph %ld: ", last_timestamp);
+	printf("graph %ld (+%ld, -%ld): ", last_timestamp, igraph_vector_size(&edges)/2,
+		  igraph_vector_size(&deletions));
 	igraph_print_stats(graph2);
       }
 
@@ -370,10 +431,48 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 
     IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i1));
     IGRAPH_CHECK(igraph_llist_int_push_back(&add_edges, i2));
+
     if (has_ecolors) {
       IGRAPH_CHECK(igraph_llist_int_push_back(&add_ecolors, i3));
       if (i3 > max_ecolor)
 	max_ecolor = i3;
+      if (has_etimesdel && (i5 > 0)) {
+	// check if the deletion timestamp i5 already exists in list
+	for (item_ptr = del_edges.first; item_ptr != NULL; item_ptr = item_ptr->next) {
+	  if (((igraph_llist_int_t *) item_ptr->data)->first->data == i5) {
+	    break;
+	  }
+	}
+	if (item_ptr != NULL) {
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) item_ptr->data,i1));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) item_ptr->data,i2));
+	} else {
+	  // init edge list for new deletion timestamp i5
+	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&del_edges,igraph_Calloc(1, igraph_llist_int_t)));
+	  IGRAPH_CHECK(igraph_llist_int_init((igraph_llist_int_t *) del_edges.last->data));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.last->data,i5));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.last->data,i1));
+	  IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.last->data,i2));
+	}
+      }
+    } else if (has_etimesdel && (i4 > 0)) {
+      // check if the deletion timestamp i4 already exists in list
+      for (item_ptr = del_edges.first; item_ptr != NULL; item_ptr = item_ptr->next) {
+	if (((igraph_llist_int_t *) item_ptr->data)->first->data == i4) {
+	  break;
+	}
+      }
+      if (item_ptr != NULL) {
+	IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) item_ptr->data,i1));
+	IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) item_ptr->data,i2));
+      } else {
+	// init edge list for new deletion timestamp i4
+	IGRAPH_CHECK(igraph_llist_ptr_push_back(&del_edges,igraph_Calloc(1, igraph_llist_int_t)));
+	IGRAPH_CHECK(igraph_llist_int_init((igraph_llist_int_t *) del_edges.last->data));
+	IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.last->data,i4));
+	IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.last->data,i1));
+	IGRAPH_CHECK(igraph_llist_int_push_back((igraph_llist_int_t *) del_edges.last->data,i2));
+      }
     }
   }
 
@@ -403,10 +502,32 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       IGRAPH_CHECK(igraph_copy(graph1, graph2));
     }
   }
-  IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges));
-  IGRAPH_CHECK(igraph_llist_int_to_vector(&add_ecolors, &ecolors));
+  IGRAPH_CHECK(igraph_llist_int_to_vector_real(&add_edges, &edges, 0));
+  IGRAPH_CHECK(igraph_llist_int_to_vector(&add_ecolors, &ecolors, 0));
+  IGRAPH_CHECK(igraph_vector_resize(&deletions, 0));
+  if (has_etimesdel) {
+    for (item_ptr = del_edges.first; item_ptr != NULL; item_ptr = item_ptr->next) {
+      if (((igraph_llist_int_t *) item_ptr->data)->first->data == last_timestamp) {
+	break;
+      }
+    }
+    if (item_ptr != NULL) {
+      igraph_vector_resize(&deletions,
+	      (igraph_llist_int_size((igraph_llist_int_t *) item_ptr->data)-1)/2);
+      for (item_int = ((igraph_llist_int_t *) item_ptr->data)->first->next, i = 0;
+		  item_int != NULL;
+		  item_int = item_int->next->next, i++) {
+	IGRAPH_CHECK(igraph_get_eid(((graph2 != NULL) ? graph2 : graph1),
+	      &eid, item_int->data, item_int->next->data, 1, 1));
+	VECTOR(deletions)[i] = eid;
+      }
+    }
+  }
+  IGRAPH_CHECK(igraph_delete_edges(graph2, igraph_ess_vector(&deletions)));
   IGRAPH_CHECK(igraph_add_edges(graph2, &edges, 0));
-  printf("graph %ld: ", timestamp);
+  // TODO: ecolor deletions
+  printf("graph %ld (+%ld, -%ld): ", timestamp, igraph_vector_size(&edges)/2,
+	    igraph_vector_size(&deletions));
   igraph_print_stats(graph2);
   if (proj_type != IGRAPH_PROJECTION_NONE) {
     VECTOR(tmp_db)[0] = graph1;
@@ -427,21 +548,21 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
   }
 
   // convert lists into vector for output
-  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_list, result_graphs));
-  //IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_vcolors_list, result_vcolors));
-  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_ecolors_list, result_ecolors));
+  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_list, result_graphs, 0));
+  //IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_vcolors_list, result_vcolors, 0));
+  IGRAPH_CHECK(igraph_llist_ptr_to_vector(&result_ecolors_list, result_ecolors, 0));
 
   printf("+++ ecolors %ld min %d max %d\n", igraph_vector_int_size(&ecolors),
       igraph_vector_int_min(&ecolors), igraph_vector_int_max(&ecolors));
 
-  // TODO: process deleted edges
-
   igraph_llist_int_destroy(&add_edges);
   igraph_llist_int_destroy(&add_ecolors);
+  igraph_llist_ptr_destroy(&del_edges); // TODO: free all lists
   igraph_llist_ptr_destroy(&result_list);
   igraph_llist_ptr_destroy(&result_vcolors_list);
   igraph_llist_ptr_destroy(&result_ecolors_list);
   igraph_vector_destroy(&edges);
+  igraph_vector_destroy(&deletions);
   igraph_vector_ptr_destroy(&tmp_db);
   igraph_vector_ptr_destroy(&tmp_db_vcolors);
   igraph_vector_ptr_destroy(&tmp_db_ecolors);
@@ -486,7 +607,7 @@ int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
       }
     }
   }
-  igraph_llist_to_vector(&node_list, &neighborhood_dups); // contains duplicates!
+  igraph_llist_to_vector(&node_list, &neighborhood_dups, 0); // contains duplicates!
   igraph_vector_sort(&neighborhood_dups);
   neigh_size = igraph_vector_size(&neighborhood_dups);
 
@@ -687,9 +808,9 @@ int igraph_i_compute_union_graph_projection(igraph_t *graph1,
 
   // add edges to graph and set edge colors
   igraph_vector_init(&edges, 0);
-  igraph_llist_int_to_vector_real(&edge_list, &edges);
+  igraph_llist_int_to_vector_real(&edge_list, &edges, 0);
   IGRAPH_CHECK(igraph_add_edges(union_graph, &edges, 0));
-  igraph_llist_int_to_vector(&ecolors_list, union_graph_ecolors);
+  igraph_llist_int_to_vector(&ecolors_list, union_graph_ecolors, 0);
 
   //printf("edges\n");
   //igraph_vector_print(&edges);
@@ -777,7 +898,7 @@ int igraph_i_compute_dynamic_node_selectors_neighbors(igraph_vector_ptr_t *graph
         }
       }
     }
-    igraph_llist_int_to_vector_real(&node_list, &changed_nodes); // sorted by construction
+    igraph_llist_int_to_vector_real(&node_list, &changed_nodes, 0); // sorted by construction
     igraph_llist_int_destroy(&node_list);
 
     // compute joint 1-hop neighborhood at timesteps t and t+1
@@ -1009,13 +1130,13 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
   // return result
   // TODO: free memory if ptrs == NULL
   if (result != NULL) {
-    igraph_llist_ptr_to_vector(&result_list, result);
+    igraph_llist_ptr_to_vector(&result_list, result, 0);
   }
   if (result_vcolors != NULL) {
-    igraph_llist_ptr_to_vector(&result_vcolors_list, result_vcolors);
+    igraph_llist_ptr_to_vector(&result_vcolors_list, result_vcolors, 0);
   }
   if (result_ecolors != NULL) {
-    igraph_llist_ptr_to_vector(&result_ecolors_list, result_ecolors);
+    igraph_llist_ptr_to_vector(&result_ecolors_list, result_ecolors, 0);
   }
 
   // clean up

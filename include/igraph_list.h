@@ -79,7 +79,7 @@ __BEGIN_DECLS
 #include "igraph_pmt_off.h"
 #undef BASE_PTR
 
-int igraph_llist_int_to_vector_real(igraph_llist_int_t *llist, igraph_vector_t *vector);
+int igraph_llist_int_to_vector_real(igraph_llist_int_t *llist, igraph_vector_t *vector, int skip);
 
 __END_DECLS
 
