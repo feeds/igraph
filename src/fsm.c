@@ -2091,6 +2091,10 @@ int igraph_gspan(const igraph_vector_ptr_t *graphs, const igraph_vector_ptr_t *v
   IGRAPH_CHECK(igraph_i_frequent_colors(vertex_colors, edge_colors, min_supp,
 			max_vcolor, max_ecolor,
 			&freq_vcolors, &freq_ecolors));
+  printf("GSPAN frequent ecolors: ");
+  igraph_vector_int_print(&freq_ecolors);
+  printf("GSPAN frequent vcolors: ");
+  igraph_vector_int_print(&freq_vcolors);
 
   if (variant == IGRAPH_GSPAN_GERM) {
     variant_data = igraph_Calloc(1, igraph_germ_data_t);
