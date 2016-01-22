@@ -1150,3 +1150,117 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
   return 0;
 }
 
+
+int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
+	igraph_bool_t has_vcolors,
+	igraph_bool_t has_ecolors, igraph_vector_ptr_t *graphs,
+	igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors) {
+  char buf[32];
+  int timestamp;
+  long int i1, i2, i3, n_fields, max_vid = 0;
+  igraph_llist_ptr_t result_graphs_list;
+  igraph_llist_ptr_t result_vcolors_list;
+  igraph_llist_ptr_t result_ecolors_list;
+  igraph_t *graph;
+  igraph_llist_t edge_list;
+  igraph_llist_int_t vcolor_list;
+  igraph_llist_int_t ecolor_list;
+  igraph_vector_t edges;
+  igraph_vector_int_t *vcolor;
+  igraph_vector_int_t *ecolor;
+
+  igraph_llist_ptr_init(&result_graphs_list);
+  igraph_llist_ptr_init(&result_vcolors_list);
+  igraph_llist_ptr_init(&result_ecolors_list);
+  igraph_vector_init(&edges, 0);
+
+  // read and parse first tid
+  if (!fgets(buf, 32, instream)) {
+    IGRAPH_ERROR("could not read from file", IGRAPH_PARSEERROR);
+  }
+  if (sscanf(buf, "t # %d", &timestamp) < 1) {
+    IGRAPH_ERROR("invalid file format, missing tid", IGRAPH_PARSEERROR);
+  }
+
+  // read first vertex
+  if (!fgets(buf, 32, instream)) {
+    IGRAPH_ERROR("could not read from file", IGRAPH_PARSEERROR);
+  }
+
+  do {
+    igraph_llist_init(&edge_list);
+    igraph_llist_int_init(&vcolor_list);
+    igraph_llist_int_init(&ecolor_list);
+
+    // parse vertices
+    do {
+      i1 = -1; i2 = -1;
+      n_fields = sscanf(buf, "v %ld %ld", &i1, &i2);
+      if (n_fields < 1) {
+	break; // we reached the first edge
+      }
+      if (i1 > max_vid) {
+	max_vid = i1;
+      }
+      if (has_vcolors) {
+	igraph_llist_int_push_back(&vcolor_list, i2);
+      }
+    } while (fgets(buf, 32, instream));
+
+    // parse edges
+    do {
+      i1 = -1; i2 = -1; i3 = -1;
+      n_fields = sscanf(buf, "e %ld %ld %ld", &i1, &i2, &i3);
+      if (n_fields < 2) {
+	break; // we reached the next tid
+      }
+      igraph_llist_push_back(&edge_list, i1);
+      igraph_llist_push_back(&edge_list, i2);
+      if (has_ecolors) {
+	igraph_llist_int_push_back(&ecolor_list, i3);
+      }
+    } while (fgets(buf, 32, instream));
+
+    // allocate graph
+    graph = igraph_Calloc(1, igraph_t);
+    igraph_empty(graph, max_vid+1, directed);
+    igraph_llist_to_vector(&edge_list, &edges, 0);
+    igraph_add_edges(graph, &edges, 0);
+    igraph_llist_ptr_push_back(&result_graphs_list, graph);
+    if (has_vcolors) {
+      vcolor = igraph_Calloc(1, igraph_vector_int_t);
+      igraph_vector_int_init(vcolor, 0);
+      igraph_llist_int_to_vector(&vcolor_list, vcolor, 0);
+      igraph_llist_ptr_push_back(&result_vcolors_list, vcolor);
+    }
+    if (has_ecolors) {
+      ecolor = igraph_Calloc(1, igraph_vector_int_t);
+      igraph_vector_int_init(ecolor, 0);
+      igraph_llist_int_to_vector(&ecolor_list, ecolor, 0);
+      igraph_llist_ptr_push_back(&result_ecolors_list, ecolor);
+    }
+    igraph_llist_destroy(&edge_list);
+    igraph_llist_int_destroy(&vcolor_list);
+    igraph_llist_int_destroy(&ecolor_list);
+
+    // parse tid
+    if (sscanf(buf, "t # %d", &timestamp) < 1) {
+      break;
+    }
+  } while (fgets(buf, 32, instream));
+
+  igraph_llist_ptr_to_vector(&result_graphs_list, graphs, 0);
+  if (has_vcolors) {
+    igraph_llist_ptr_to_vector(&result_vcolors_list, vcolors, 0);
+  }
+  if (has_ecolors) {
+    igraph_llist_ptr_to_vector(&result_ecolors_list, ecolors, 0);
+  }
+
+  igraph_llist_ptr_destroy(&result_graphs_list);
+  igraph_llist_ptr_destroy(&result_vcolors_list);
+  igraph_llist_ptr_destroy(&result_ecolors_list);
+
+  return 0;
+}
+

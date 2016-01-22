@@ -35,6 +35,7 @@
 
 #include <stdio.h>
 #include "igraph_vector_ptr.h"
+#include "igraph_fsm.h"
 
 __BEGIN_DECLS
 
@@ -57,6 +58,10 @@ typedef struct igraph_event_t {
   long int v1, v2, label;
 } igraph_event_t;
 
+int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
+	igraph_bool_t has_vcolors,
+	igraph_bool_t has_ecolors, igraph_vector_ptr_t *graphs,
+	igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors);
 int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs);
 int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directed,
       igraph_bool_t has_vcolors, igraph_bool_t has_ecolors, igraph_bool_t has_etimesdel,
