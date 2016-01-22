@@ -58,6 +58,11 @@ typedef struct igraph_event_t {
   long int v1, v2, label;
 } igraph_event_t;
 
+
+int igraph_write_avm(long int N, long int T, int avg_degree,
+	    double opinion_prior, double rewiring_p,
+	    FILE *outstream);
+
 int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
 	igraph_bool_t has_vcolors,
 	igraph_bool_t has_ecolors, igraph_vector_ptr_t *graphs,

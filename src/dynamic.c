@@ -22,6 +22,7 @@
 
 #include <stdlib.h>
 #include <limits.h>
+#include <time.h>
 #include "igraph_fsm.h"
 #include "igraph_dynamic.h"
 #include "igraph_interface.h"
@@ -29,6 +30,7 @@
 #include "igraph_list.h"
 #include "igraph_memory.h"
 #include "igraph_structural.h"
+#include "igraph_games.h"
 
 
 int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
@@ -1264,3 +1266,70 @@ int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
   return 0;
 }
 
+
+int igraph_write_avm(long int N, long int T, int avg_degree,
+	    double opinion_prior, double rewiring_p,
+	    FILE *outstream) {
+  igraph_t graph;
+  igraph_vector_int_t opinions;
+  long int i, t, eid, v_resolv, v_other, v_new;
+  igraph_integer_t v1, v2;
+
+  srand(time(NULL));
+
+  // initialize graph
+  IGRAPH_CHECK(igraph_erdos_renyi_game(&graph, IGRAPH_ERDOS_RENYI_GNM, N, (int)(avg_degree*N/2.),
+	      /*directed*/ 0, /*loops*/ 0));
+
+  // initialize opinions
+  IGRAPH_CHECK(igraph_vector_int_init(&opinions, N));
+  for (i = 0; i < N; i++) {
+    VECTOR(opinions)[i] = 1+((rand()/(double)RAND_MAX)<opinion_prior);
+  }
+
+  // write first graph
+  fprintf(outstream, "t # 0\n");
+  igraph_write_colored_graph(&graph, &opinions, NULL, NULL, outstream);
+
+  // evolve network
+  for (t = 0; t < T; t++) {
+    // randomly choose an edge that connects nodes with different opinions
+    do {
+      eid = rand() % igraph_ecount(&graph);
+      IGRAPH_CHECK(igraph_edge(&graph, eid, &v1, &v2));
+      printf("+++ sampling edge %ld\n", eid);
+    } while (VECTOR(opinions)[v1] == VECTOR(opinions)[v2]); // TODO: possibly infinite
+
+    // randomly choose one of the two nodes as the resolver
+    if (rand() % 2) {
+      v_resolv = v1;
+      v_other = v2;
+    } else {
+      v_resolv = v2;
+      v_other = v1;
+    }
+
+    // randomly choose an action to take (rewiring or adoption)
+    if ((rand()/(double)RAND_MAX)<rewiring_p) {
+      // rewiring
+      do {
+	v_new = rand() % N;
+      } while ((v_new == v_resolv) || (VECTOR(opinions)[v_new] != VECTOR(opinions)[v_resolv]));//inf
+      printf("time %ld: %ld rewires from %ld to %ld\n", t+1, v_resolv,
+		  v_other, v_new);
+      IGRAPH_CHECK(igraph_delete_edges(&graph, igraph_ess_1(eid)));
+      IGRAPH_CHECK(igraph_add_edge(&graph, v_resolv, v_new));
+    } else {
+      // adoption
+      printf("time %ld: %ld adopts opinion %d from %ld\n", t+1, v_resolv,
+		  VECTOR(opinions)[v_other], v_other);
+      VECTOR(opinions)[v_resolv] = VECTOR(opinions)[v_other];
+    }
+
+    // write graph
+    fprintf(outstream, "t # %ld\n", t+1);
+    igraph_write_colored_graph(&graph, &opinions, NULL, NULL, outstream);
+  }
+
+  return 0;
+}
