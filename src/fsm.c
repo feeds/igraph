@@ -1886,7 +1886,7 @@ int igraph_i_build_seeds_default(igraph_bool_t has_vcolors, igraph_bool_t has_ec
 
   if (has_vcolors) {
     for (i = 0; VECTOR(*freq_vcolors)[i] != -1; i++) {
-      for (j = 0; j <= i && VECTOR(*freq_vcolors)[j] != -1; j++) {
+      for (j = i; VECTOR(*freq_vcolors)[j] != -1; j++) {
 	if (has_ecolors) {
 	  for (k = 0; VECTOR(*freq_ecolors)[k] != -1; k++) {
 	    // VC[i] -- EC[k] -- VC[j]
