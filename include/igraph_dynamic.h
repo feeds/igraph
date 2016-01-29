@@ -60,7 +60,7 @@ typedef struct igraph_event_t {
 
 
 int igraph_write_avm(long int N, long int T, int avg_degree,
-	    double opinion_prior, double rewiring_p,
+	    double opinion_prior, double rewiring_p, int initial_graph_generator,
 	    FILE *outstream);
 
 int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,

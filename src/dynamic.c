@@ -1268,7 +1268,7 @@ int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
 
 
 int igraph_write_avm(long int N, long int T, int avg_degree,
-	    double opinion_prior, double rewiring_p,
+	    double opinion_prior, double rewiring_p, int initial_graph_generator,
 	    FILE *outstream) {
   igraph_t graph;
   igraph_vector_int_t opinions;
@@ -1278,8 +1278,15 @@ int igraph_write_avm(long int N, long int T, int avg_degree,
   srand(time(NULL));
 
   // initialize graph
-  IGRAPH_CHECK(igraph_erdos_renyi_game(&graph, IGRAPH_ERDOS_RENYI_GNM, N, (int)(avg_degree*N/2.),
-	      /*directed*/ 0, /*loops*/ 0));
+  if (initial_graph_generator == 0) {
+    IGRAPH_CHECK(igraph_erdos_renyi_game(&graph, IGRAPH_ERDOS_RENYI_GNM, N, (int)(avg_degree*N/2.),
+		/*directed*/ 0, /*loops*/ 0));
+  } else {
+    IGRAPH_CHECK(igraph_barabasi_game(&graph, N, /*power=*/1.0,
+		/*outedges per node=*/(avg_degree/2), /*outseq=*/ NULL,
+		/*outpref=*/ 1, /*A=*/ 1.0, /*directed=*/ 0,
+		/*algo=*/IGRAPH_BARABASI_PSUMTREE, /*startfrom=*/ NULL));
+  }
 
   // initialize opinions
   IGRAPH_CHECK(igraph_vector_int_init(&opinions, N));
