@@ -71,9 +71,9 @@ void igraph_print_stats(const igraph_t *g) {
   igraph_bool_t simple, multi;
   igraph_is_simple(g, &simple);
   igraph_has_multiple(g, &multi);
-  printf("vcount %ld ecount %ld directed %d simple %d multi %d\n",
+  printf("vcount %ld ecount %ld directed %d simple %d multi %d c %.1f\n",
       (long int) igraph_vcount(g), (long int) igraph_ecount(g), (int)igraph_is_directed(g),
-      simple, multi);
+      simple, multi, 2.*igraph_ecount(g)/igraph_vcount(g));
 }
 
 void igraph_print(const igraph_t *g, const igraph_vector_int_t *vcolors,
