@@ -70,7 +70,7 @@ int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
 int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs);
 int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directed,
       igraph_bool_t has_vcolors, igraph_bool_t has_ecolors, igraph_bool_t has_etimesdel,
-      igraph_projection_t proj_type,
+      igraph_projection_t proj_type, long int timestep_limit,
       igraph_vector_ptr_t *graphs, igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors);
 
 int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
