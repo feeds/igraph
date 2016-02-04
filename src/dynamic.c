@@ -1163,13 +1163,16 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
 int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
 	igraph_bool_t has_vcolors,
 	igraph_bool_t has_ecolors, igraph_vector_ptr_t *graphs,
-	igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors) {
+	igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+	igraph_vector_long_t *supps) {
   char buf[32];
   int timestamp;
   long int i1, i2, i3, n_fields, max_vid = 0;
+  long int supp = -1;
   igraph_llist_ptr_t result_graphs_list;
   igraph_llist_ptr_t result_vcolors_list;
   igraph_llist_ptr_t result_ecolors_list;
+  igraph_llist_long_t result_supps_list;
   igraph_t *graph;
   igraph_llist_t edge_list;
   igraph_llist_int_t vcolor_list;
@@ -1181,13 +1184,14 @@ int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
   igraph_llist_ptr_init(&result_graphs_list);
   igraph_llist_ptr_init(&result_vcolors_list);
   igraph_llist_ptr_init(&result_ecolors_list);
+  igraph_llist_long_init(&result_supps_list);
   igraph_vector_init(&edges, 0);
 
   // read and parse first tid
   if (!fgets(buf, 32, instream)) {
     IGRAPH_ERROR("could not read from file", IGRAPH_PARSEERROR);
   }
-  if (sscanf(buf, "t # %d", &timestamp) < 1) {
+  if (sscanf(buf, "t # %d %ld", &timestamp, &supp) < 1) {
     IGRAPH_ERROR("invalid file format, missing tid", IGRAPH_PARSEERROR);
   }
 
@@ -1248,14 +1252,18 @@ int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
       igraph_llist_int_to_vector(&ecolor_list, ecolor, 0);
       igraph_llist_ptr_push_back(&result_ecolors_list, ecolor);
     }
+    if (supps != NULL) {
+      igraph_llist_long_push_back(&result_supps_list, supp);
+    }
     igraph_llist_destroy(&edge_list);
     igraph_llist_int_destroy(&vcolor_list);
     igraph_llist_int_destroy(&ecolor_list);
 
     // parse tid
-    if (sscanf(buf, "t # %d", &timestamp) < 1) {
+    if (sscanf(buf, "t # %d %ld", &timestamp, &supp) < 1) {
       break;
     }
+    max_vid = -1;
   } while (fgets(buf, 32, instream));
 
   igraph_llist_ptr_to_vector(&result_graphs_list, graphs, 0);
@@ -1265,10 +1273,14 @@ int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
   if (has_ecolors) {
     igraph_llist_ptr_to_vector(&result_ecolors_list, ecolors, 0);
   }
+  if (supps != NULL) {
+    igraph_llist_long_to_vector(&result_supps_list, supps, 0);
+  }
 
   igraph_llist_ptr_destroy(&result_graphs_list);
   igraph_llist_ptr_destroy(&result_vcolors_list);
   igraph_llist_ptr_destroy(&result_ecolors_list);
+  igraph_llist_long_destroy(&result_supps_list);
 
   return 0;
 }
