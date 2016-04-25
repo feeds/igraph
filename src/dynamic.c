@@ -589,6 +589,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 // assert: all nodes from seed_nodes appear in graph1 and graph2
 // assert: undirected graphs
 //
+// naive algorithm, differs from thesis!
 // runtime: O(N_seeds*k_max + N_seeds*k_max*log(N_seeds*k_max) + (N_seeds*k_max+N_seeds))
 int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
       igraph_vector_t *seed_nodes, igraph_vector_t *neighborhood) {
