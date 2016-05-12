@@ -121,6 +121,35 @@ int igraph_write_colored_graph(igraph_t *g, igraph_vector_int_t *vcolors,
 }
 
 
+int igraph_write_colored_graph_gz(igraph_t *g, igraph_vector_int_t *vcolors,
+      igraph_vector_int_t *ecolors, igraph_vector_int_t *etimes, gzFile f) {
+  long int i;
+  igraph_integer_t from, to;
+  for (i = 0; i < igraph_vcount(g); i++) {
+    if (vcolors != NULL)
+      gzprintf(f, "v %ld %d\n", i, VECTOR(*vcolors)[i]);
+    else
+      gzprintf(f, "v %ld\n", i);
+  }
+  for (i = 0; i < igraph_ecount(g); i++) {
+    IGRAPH_CHECK(igraph_edge(g, i, &from, &to));
+    gzprintf(f, "e %ld %ld", (long int) from, (long int) to);
+    if (ecolors != NULL) {
+      gzprintf(f, " %d", VECTOR(*ecolors)[i]);
+      if (etimes != NULL) {
+	gzprintf(f, " %d", VECTOR(*etimes)[i]);
+      }
+    } else {
+      if (etimes != NULL) {
+	gzprintf(f, " %d", VECTOR(*etimes)[i]);
+      }
+    }
+    gzprintf(f, "\n");
+  }
+  return 0;
+}
+
+
 // graph1 is the larger graph, graph2 is the smaller graph
 // Can handle a single fixed assignment (pattern node, target node) passed as a length-2 vector
 //

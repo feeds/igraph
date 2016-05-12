@@ -38,6 +38,8 @@
 #include "igraph_vector_ptr.h"
 #include "igraph_topology.h"
 
+#include <zlib.h>
+
 __BEGIN_DECLS
 
 typedef enum igraph_gspan_variant_t {
@@ -69,6 +71,9 @@ void igraph_print_stats(const igraph_t *g);
 
 int igraph_write_colored_graph(igraph_t *g, igraph_vector_int_t *vcolors,
       igraph_vector_int_t *ecolors, igraph_vector_int_t *etimes, FILE *f);
+
+int igraph_write_colored_graph_gz(igraph_t *g, igraph_vector_int_t *vcolors,
+      igraph_vector_int_t *ecolors, igraph_vector_int_t *etimes, gzFile f);
 
 // O(1) access to in- and out-neighbors and degrees
 
