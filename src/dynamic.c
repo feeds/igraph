@@ -211,7 +211,8 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
       igraph_vector_ptr_t *result_ecolors, gzFile fgz) {
   char buf[32];
   long int i, i1, i2, i3, i4, i5, max_vid, timestamp, last_timestamp, n_fields, processed_graphs;
-  long int max_ecolor = 0, tid = 0;
+  long int max_ecolor = 0;
+  long int tid = 0;
   igraph_integer_t eid;
   char ve;
   igraph_t *graph1=NULL, *graph2=NULL;
@@ -325,7 +326,12 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	graph1 = igraph_Calloc(1, igraph_t);
 	IGRAPH_CHECK(igraph_empty(graph1, max_vid+1, directed));
 	if (proj_type == IGRAPH_PROJECTION_NONE) {
-	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, graph1));
+	  if (fgz != NULL) {
+	    // output to file
+	  } else {
+	    // add to result list
+	    IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, graph1));
+	  }
 	}
       } else if (graph2 == NULL) {
 	graph2 = igraph_Calloc(1, igraph_t);
@@ -402,28 +408,20 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	  VECTOR(tmp_db_ecolors)[0] = &ecolors;
 	  VECTOR(tmp_db_ecolors)[1] = &ecolors; // they are static
 	}
-	IGRAPH_CHECK(igraph_compute_dynamic_union_graph_projection(&tmp_db,
-		/*vcolors=*/ NULL, (has_ecolors ? &tmp_db_ecolors : NULL), proj_type,
-		&tmp_ug_graphs, /*tmp_ug_vcolors=*/ NULL, &tmp_ug_ecolors,
-		/*max_vcolor=*/ 0, (has_ecolors ? max_ecolor : 0)));
-	for (i = 0; i < igraph_vector_ptr_size(&tmp_ug_graphs); i++) {
-	  if (fgz != NULL) {
-	    // write graphs to specified file and free memory
-	    gzprintf(fgz, "t # %ld\n", tid);
-	    igraph_write_colored_graph_gz((igraph_t *) VECTOR(tmp_ug_graphs)[i],
-		/*(has_vcolors ? (igraph_vector_int_t *) VECTOR(tmp_ug_vcolors)[i] : ...) */ NULL,
-		(igraph_vector_int_t *) VECTOR(tmp_ug_ecolors)[i],
-		/*etimes*/NULL, fgz);
-	    igraph_destroy((igraph_t *) VECTOR(tmp_ug_graphs)[i]);
-	    igraph_vector_int_destroy((igraph_vector_int_t *) VECTOR(tmp_ug_ecolors)[i]);
-	    igraph_free(VECTOR(tmp_ug_graphs)[i]);
-	    igraph_free(VECTOR(tmp_ug_ecolors)[i]);
-	    tid++;
-	  } else {
+	if (fgz == NULL) {
+	  IGRAPH_CHECK(igraph_compute_dynamic_union_graph_projection(&tmp_db,
+		  /*vcolors=*/ NULL, (has_ecolors ? &tmp_db_ecolors : NULL), proj_type,
+		  &tmp_ug_graphs, /*tmp_ug_vcolors=*/ NULL, &tmp_ug_ecolors,
+		  /*max_vcolor=*/ 0, (has_ecolors ? max_ecolor : 0)));
+	  for (i = 0; i < igraph_vector_ptr_size(&tmp_ug_graphs); i++) {
 	    IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, VECTOR(tmp_ug_graphs)[i]));
 	    //IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_vcolors_list,VECTOR(tmp_ug_vcolors)[i]));
 	    IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_ecolors_list, VECTOR(tmp_ug_ecolors)[i]));
 	  }
+	} else {
+	  IGRAPH_CHECK(igraph_write_dynamic_union_graph_projection(&tmp_db,
+		  /*vcolors=*/ NULL, (has_ecolors ? &tmp_db_ecolors : NULL), proj_type,
+		  /*max_vcolor=*/ 0, (has_ecolors ? max_ecolor : 0), fgz, &tid));
 	}
       }
 
@@ -560,28 +558,20 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 	VECTOR(tmp_db_ecolors)[0] = &ecolors;
 	VECTOR(tmp_db_ecolors)[1] = &ecolors; // they are static
       }
-      IGRAPH_CHECK(igraph_compute_dynamic_union_graph_projection(&tmp_db,
-	      /*vcolors=*/ NULL, (has_ecolors ? &tmp_db_ecolors : NULL), proj_type,
-	      &tmp_ug_graphs, /*result_vcolors=*/ NULL, &tmp_ug_ecolors,
-	      /*max_vcolor=*/ 0, (has_ecolors ? max_ecolor : 0)));
-      for (i = 0; i < igraph_vector_ptr_size(&tmp_ug_graphs); i++) {
-	if (fgz != NULL) {
-	  // write graphs to specified file and free memory
-	  gzprintf(fgz, "t # %ld\n", tid);
-	  igraph_write_colored_graph_gz((igraph_t *) VECTOR(tmp_ug_graphs)[i],
-	      /*(has_vcolors ? (igraph_vector_int_t *) VECTOR(tmp_ug_vcolors)[i] : ...) */ NULL,
-	      (igraph_vector_int_t *) VECTOR(tmp_ug_ecolors)[i],
-	      /*etimes*/NULL, fgz);
-	  igraph_destroy((igraph_t *) VECTOR(tmp_ug_graphs)[i]);
-	  igraph_vector_int_destroy((igraph_vector_int_t *) VECTOR(tmp_ug_ecolors)[i]);
-	  igraph_free(VECTOR(tmp_ug_graphs)[i]);
-	  igraph_free(VECTOR(tmp_ug_ecolors)[i]);
-	  tid++;
-	} else {
+      if (fgz == NULL) {
+	IGRAPH_CHECK(igraph_compute_dynamic_union_graph_projection(&tmp_db,
+		/*vcolors=*/ NULL, (has_ecolors ? &tmp_db_ecolors : NULL), proj_type,
+		&tmp_ug_graphs, /*tmp_ug_vcolors=*/ NULL, &tmp_ug_ecolors,
+		/*max_vcolor=*/ 0, (has_ecolors ? max_ecolor : 0)));
+	for (i = 0; i < igraph_vector_ptr_size(&tmp_ug_graphs); i++) {
 	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_list, VECTOR(tmp_ug_graphs)[i]));
 	  //IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_vcolors_list,VECTOR(tmp_ug_vcolors)[i]));
 	  IGRAPH_CHECK(igraph_llist_ptr_push_back(&result_ecolors_list, VECTOR(tmp_ug_ecolors)[i]));
 	}
+      } else {
+	IGRAPH_CHECK(igraph_write_dynamic_union_graph_projection(&tmp_db,
+		/*vcolors=*/ NULL, (has_ecolors ? &tmp_db_ecolors : NULL), proj_type,
+		/*max_vcolor=*/ 0, (has_ecolors ? max_ecolor : 0), fgz, &tid));
       }
     }
   }
@@ -1068,6 +1058,105 @@ int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
   igraph_vector_destroy(&node_event);
   igraph_vector_destroy(&edge_event);
   igraph_vector_destroy(&neighborhood);
+
+  return 0;
+}
+
+// assert: all graphs have the same number of nodes, and node IDs correspond with each other
+// assert: undirected graph
+int igraph_write_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
+      igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+      igraph_projection_t proj_type,
+      igraph_integer_t max_vcolor, igraph_integer_t max_ecolor,
+      gzFile fgz, long int *tid) {
+  long int T = igraph_vector_ptr_size(graphs);
+  long int t;
+  igraph_t union_graph;
+  igraph_vector_int_t union_graph_vcolors, union_graph_ecolors;
+  igraph_vs_t *node_selector;
+  igraph_vector_ptr_t node_selectors;
+  igraph_llist_ptr_t *node_selector_list;
+  igraph_llist_item_ptr_t *item_ptr;
+
+  igraph_vector_ptr_init(&node_selectors, 0);
+
+  // depending on the projection type, compute the node selectors for all timesteps
+  switch (proj_type) {
+    case IGRAPH_PROJECTION_EVENT:
+      IGRAPH_CHECK(igraph_i_compute_dynamic_node_selectors_event(graphs,
+					      vcolors, ecolors, &node_selectors));
+      break;
+    case IGRAPH_PROJECTION_NEIGHBORS:
+      IGRAPH_CHECK(igraph_i_compute_dynamic_node_selectors_neighbors(graphs,
+					      vcolors, ecolors, &node_selectors));
+      break;
+    case IGRAPH_PROJECTION_FULL:
+    default:
+      IGRAPH_CHECK(igraph_i_compute_dynamic_node_selectors_full(T, &node_selectors));
+      break;
+  }
+
+  // compute the union graph projection for all node selectors at each timestep
+  for (t = 0; t < T-1; t++) {
+    node_selector_list = (igraph_llist_ptr_t *) VECTOR(node_selectors)[t];
+    for (item_ptr = node_selector_list->first; item_ptr != NULL; item_ptr = item_ptr->next) {
+      node_selector = (igraph_vs_t *) item_ptr->data;
+      igraph_vector_int_init(&union_graph_vcolors, 0);
+      igraph_vector_int_init(&union_graph_ecolors, 0);
+      if (vcolors != NULL) {
+	if (ecolors != NULL) {
+	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t],
+	       (igraph_vector_int_t *) VECTOR(*ecolors)[t],
+	       (igraph_t *) VECTOR(*graphs)[t+1],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t+1],
+	       (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
+	       *node_selector, &union_graph, &union_graph_vcolors, &union_graph_ecolors,
+	       max_vcolor, max_ecolor);
+	} else {
+	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t], NULL,
+	       (igraph_t *) VECTOR(*graphs)[t+1],
+	       (igraph_vector_int_t *) VECTOR(*vcolors)[t+1], NULL,
+	       *node_selector, &union_graph, &union_graph_vcolors, &union_graph_ecolors,
+	       max_vcolor, max_ecolor);
+	}
+      } else {
+	if (ecolors != NULL) {
+	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t],
+	       NULL, (igraph_vector_int_t *) VECTOR(*ecolors)[t],
+	       (igraph_t *) VECTOR(*graphs)[t+1],
+	       NULL,
+	       (igraph_vector_int_t *) VECTOR(*ecolors)[t+1],
+	       *node_selector, &union_graph, &union_graph_vcolors, &union_graph_ecolors,
+	       max_vcolor, max_ecolor);
+	} else {
+	  igraph_i_compute_union_graph_projection((igraph_t *) VECTOR(*graphs)[t], NULL, NULL,
+	       (igraph_t *) VECTOR(*graphs)[t+1], NULL, NULL,
+	       *node_selector, &union_graph, &union_graph_vcolors, &union_graph_ecolors,
+	       max_vcolor, max_ecolor);
+	}
+      }
+
+      //printf("ug %ld: vcount %d ecount %d\n", t, igraph_vcount(union_graph), igraph_ecount(union_graph));
+      gzprintf(fgz, "t # %ld\n", *tid);
+      igraph_write_colored_graph_gz(&union_graph, /*vcolors*/ NULL, &union_graph_ecolors,
+	  /*etimes*/ NULL, fgz);
+      (*tid)++;
+
+      igraph_vector_int_destroy(&union_graph_vcolors);
+      igraph_vector_int_destroy(&union_graph_ecolors);
+      igraph_destroy(&union_graph);
+
+      igraph_vs_destroy(node_selector);
+      igraph_free(node_selector);
+    } // for all node selectors at timestep t
+
+    igraph_llist_ptr_destroy(node_selector_list);
+    igraph_free(node_selector_list);
+  } // for t = 1...T
+
+  igraph_vector_ptr_destroy(&node_selectors);
 
   return 0;
 }

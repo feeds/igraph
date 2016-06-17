@@ -84,6 +84,12 @@ int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
       igraph_vector_ptr_t *result_ecolors,
       igraph_integer_t max_vcolor, igraph_integer_t max_ecolor);
 
+int igraph_write_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
+      igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+      igraph_projection_t proj_type,
+      igraph_integer_t max_vcolor, igraph_integer_t max_ecolor,
+      gzFile fgz, long int *tid);
+
 void igraph_evomine_stream(igraph_t *initial_network, igraph_event_t *stream);
 
 __END_DECLS
