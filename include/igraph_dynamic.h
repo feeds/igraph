@@ -69,6 +69,11 @@ int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
 	igraph_bool_t has_ecolors, igraph_vector_ptr_t *graphs,
 	igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
 	igraph_vector_long_t *supps);
+int igraph_read_and_project_transactions_velist(FILE *instream, igraph_bool_t directed,
+	igraph_bool_t has_vcolors, igraph_bool_t has_ecolors,
+	igraph_integer_t max_vcolor, igraph_integer_t max_ecolor,
+	igraph_projection_t proj_type, igraph_integer_t timestep_limit,
+	gzFile fgz);
 
 int igraph_read_dynamic_velist(FILE *instream, igraph_vector_ptr_t *graphs);
 int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directed,
