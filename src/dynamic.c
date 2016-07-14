@@ -475,7 +475,7 @@ int igraph_read_and_project_dynamic_velist(FILE *instream, igraph_bool_t directe
 
 // assert: seed_nodes is sorted ascendingly
 // assert: all nodes from seed_nodes appear in graph1 and graph2
-// assert: undirected graphs
+// assert: undirected graphs (why? seems to work with directed graphs)
 //
 // naive algorithm, differs from thesis!
 // runtime: O(N_seeds*k_max + N_seeds*k_max*log(N_seeds*k_max) + (N_seeds*k_max+N_seeds))
@@ -931,7 +931,6 @@ int igraph_i_compute_dynamic_node_selectors_event(igraph_vector_ptr_t *graphs,
 }
 
 // assert: all graphs have the same number of nodes, and node IDs correspond with each other
-// assert: undirected graph
 int igraph_write_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
       igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
       igraph_projection_t proj_type,
@@ -1030,7 +1029,6 @@ int igraph_write_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
 }
 
 // assert: all graphs have the same number of nodes, and node IDs correspond with each other
-// assert: undirected graph
 int igraph_compute_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
       igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
       igraph_projection_t proj_type,
