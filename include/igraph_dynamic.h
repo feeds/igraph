@@ -66,8 +66,11 @@ int igraph_write_avm(long int N, long int T, int avg_degree,
 
 int igraph_read_transactions_velist(FILE *instream, igraph_bool_t directed,
 	igraph_bool_t has_vcolors,
-	igraph_bool_t has_ecolors, igraph_vector_ptr_t *graphs,
+	igraph_bool_t has_ecolors,
+	igraph_bool_t has_etimes,
+	igraph_vector_ptr_t *graphs,
 	igraph_vector_ptr_t *vcolors, igraph_vector_ptr_t *ecolors,
+	igraph_vector_ptr_t *etimes,
 	igraph_vector_long_t *supps);
 int igraph_read_and_project_transactions_velist(FILE *instream, igraph_bool_t directed,
 	igraph_bool_t has_vcolors, igraph_bool_t has_ecolors,
