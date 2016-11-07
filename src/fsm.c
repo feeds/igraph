@@ -583,6 +583,31 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
   return 0;
 }
+int igraph_subisomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
+			   const igraph_vector_int_t *vertex_color1,
+			   const igraph_vector_int_t *vertex_color2,
+			   const igraph_vector_int_t *edge_color1,
+			   const igraph_vector_int_t *edge_color2,
+			   const igraph_vector_int_t *edge_timestamp1,
+			   const igraph_vector_int_t *edge_timestamp2,
+			   igraph_bool_t induced,
+			   igraph_gspan_variant_t variant,
+			   void *variant_data,
+			   long int *fixed,
+			   igraph_bool_t *iso) {
+  return igraph_i_subisomorphic(graph1, graph2,
+			   vertex_color1,
+			   vertex_color2,
+			   edge_color1,
+			   edge_color2,
+			   edge_timestamp1,
+			   edge_timestamp2,
+			   induced,
+			   variant,
+			   variant_data,
+			   fixed,
+			   iso);
+}
 
 
 // ------------- SUPPORT MEASURES -------------

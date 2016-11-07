@@ -75,6 +75,19 @@ int igraph_write_colored_graph(igraph_t *g, igraph_vector_int_t *vcolors,
 int igraph_write_colored_graph_gz(igraph_t *g, igraph_vector_int_t *vcolors,
       igraph_vector_int_t *ecolors, igraph_vector_int_t *etimes, gzFile f);
 
+int igraph_subisomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
+			   const igraph_vector_int_t *vertex_color1,
+			   const igraph_vector_int_t *vertex_color2,
+			   const igraph_vector_int_t *edge_color1,
+			   const igraph_vector_int_t *edge_color2,
+			   const igraph_vector_int_t *edge_timestamp1,
+			   const igraph_vector_int_t *edge_timestamp2,
+			   igraph_bool_t induced,
+			   igraph_gspan_variant_t variant,
+			   void *variant_data,
+			   long int *fixed,
+			   igraph_bool_t *iso);
+
 // O(1) access to in- and out-neighbors and degrees
 
 #ifndef OUT_NEIGHBOR
