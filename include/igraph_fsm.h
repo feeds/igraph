@@ -86,7 +86,15 @@ int igraph_subisomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
 			   long int *fixed,
+			   igraph_bool_t allow_unconnected,
 			   igraph_bool_t *iso);
+
+int igraph_isomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
+         const igraph_vector_int_t *vertex_color1,
+         const igraph_vector_int_t *vertex_color2,
+         const igraph_vector_int_t *edge_color1,
+         const igraph_vector_int_t *edge_color2,
+         igraph_bool_t *iso);
 
 // O(1) access to in- and out-neighbors and degrees
 
@@ -96,7 +104,7 @@ int igraph_subisomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
 
 #ifndef IN_NEIGHBOR
 # define IN_NEIGHBOR(g, v, i) ((long int) VECTOR((g).from)[(long int) VECTOR((g).ii)[(long int) VECTOR((g).is)[(v)] + i]])
-#endif
+#endif	
 
 #ifndef NEIGHBOR
 # define NEIGHBOR(g, v, i) (((i) < VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]) ? OUT_NEIGHBOR((g),(v),(i)) : IN_NEIGHBOR((g),(v),((i)-(long int)(VECTOR((g).os)[(v)+1]-VECTOR((g).os)[(v)]))))

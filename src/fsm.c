@@ -152,9 +152,9 @@ int igraph_write_colored_graph_gz(igraph_t *g, igraph_vector_int_t *vcolors,
 
 // graph1 is the larger graph, graph2 is the smaller graph
 // Can handle a single fixed assignment (pattern node, target node) passed as a length-2 vector
-//
-// NOTE: Only works for connected pattern graphs! Can be extended to non-connected graphs
-// by restarting DFS for all connected components.
+// 
+// Unconnected components can be allowed, but should not be 
+// used if it can be avoided. In that setting, a fixed assignment is prohibited.
 //
 // DFS version of the RI algorithm by Bonnici et al.: "A subgraph isomorphism algorithm
 // and its application to biochemical data", in: BMC Bioinformatics, vol. 14(7), 2013.
@@ -184,14 +184,22 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
 			   long int *fixed,
+         igraph_bool_t allow_unconnected,
 			   igraph_bool_t *iso) {
   long int vcount1 = igraph_vcount(graph1);
   long int vcount2 = igraph_vcount(graph2);
-  long int i, j, fixed_count, partial_solution_pos, pred;
+  long int i, j, k, fixed_count, partial_solution_pos, pred;
   long int pattern_node, other_pattern_node, target_node, other_target_node;
-  long int indeg1, indeg2, outdeg1, outdeg2, max_deg;
+  long int indeg1, indeg2, outdeg1, outdeg2;
   igraph_integer_t eid1, eid2;
   int end, success;
+
+  igraph_vector_t membership;
+  igraph_vector_t cluster_size;
+  igraph_integer_t number_of_clusters; 
+  igraph_vector_int_t cluster_max_deg;
+  igraph_vector_int_t cluster_start_node;
+
   igraph_vector_t node_ordering;
   igraph_vector_t pred_idx;
   igraph_vector_t visited;
@@ -214,88 +222,120 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
   success = 1;
   directed = igraph_is_directed(graph1);
 
+  // STEP -1: Identify weakly connected clusters
+  IGRAPH_CHECK(igraph_vector_init(&membership, 0));
+  IGRAPH_CHECK(igraph_vector_init(&cluster_size, 0));
+
+  // generate (weakly connected) clusters
+  igraph_clusters(graph2, &membership, &cluster_size, &number_of_clusters,
+                  IGRAPH_WEAK);
+ 
+  // if you only care about connected graphs and have several clusters. Abort.
+  if(!allow_unconnected && number_of_clusters > 1){
+    *iso = 0;
+    igraph_vector_destroy(&membership);
+    igraph_vector_destroy(&cluster_size);
+    return 1;
+  }
+
   // STEP 0: create a static ordering of the pattern nodes by DFS
   // if a fixed assignment is given, use this node as root, otherwise take the one with
   // the largest degree (heuristic for better pruning from RI algorithm)
-
   IGRAPH_CHECK(igraph_stack_init(&dfs_node_stack, vcount2*vcount2));
   IGRAPH_CHECK(igraph_stack_init(&dfs_pred_stack, vcount2*vcount2));
   IGRAPH_CHECK(igraph_vector_init(&node_ordering, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&pred_idx, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&visited, vcount2));
 
-  if (fixed == NULL) {
-    // initial vertex in RI: maximum degree vertex
-    max_deg = 0;
-    j = 0;
-    for (i = 0; i < vcount2; i++) {
-      if (DEGREE(*graph2, i) > max_deg) {
-        max_deg = DEGREE(*graph2, i);
-        j = i;
-      }
-    }
-    IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, j));
-    fixed_count = 0;
-  } else {
-    IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, fixed[0]));
-    fixed_count = 1;
-  }
-  IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, -1)); // first node has no predecessor
-  i = 0;
-  while (!igraph_stack_empty(&dfs_node_stack)) {
-    pattern_node = (long int) igraph_stack_pop(&dfs_node_stack);
-    pred = (long int) igraph_stack_pop(&dfs_pred_stack);
-    if (VECTOR(visited)[pattern_node] == 1)
-      continue;
+  IGRAPH_CHECK(igraph_vector_int_init(&cluster_max_deg,number_of_clusters));
+  IGRAPH_CHECK(igraph_vector_int_init(&cluster_start_node,number_of_clusters));
+ 
+  igraph_vector_int_fill(&cluster_max_deg,-1);
 
-    // insert current node into ordering and set predecessor index
-    VECTOR(node_ordering)[i] = pattern_node;
-    VECTOR(pred_idx)[i] = pred;
 
-    // add neighbors to stack
-    // TODO: in the order specified by RI's scoring functions
-    for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
-      if (VECTOR(visited)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
-        continue;
-      }
-      if ((variant == IGRAPH_GSPAN_LFRMINER)
-	    && VECTOR(*vertex_color2)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
-	// only the e node has label 1, and it is treated specially (see below)
-	continue;
-      }
-      IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
-      IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
-    }
-
-    if ((variant == IGRAPH_GSPAN_LFRMINER) && (i == 0)) {
-      // we just added the s node at the first position of the DFS node ordering,
-      // and added its neighbors (except for e node) to the stack.
-      // The next node in the ordering must be the e node (which is a neighbor), so we
-      // put in on top of the stack.
-      for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
-	if (VECTOR(*vertex_color2)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
-	  IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
-	  IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
-	  break;
-	}
-      }
-    }
-
-    VECTOR(visited)[pattern_node] = 1;
-    i++;
-  }
-
-  // if not all vertices have been visited, the graph is not connected. Abort.
-  if (igraph_vector_contains(&visited, 0)) {
-    *iso = 0;
-    igraph_stack_destroy(&dfs_node_stack);
-    igraph_stack_destroy(&dfs_pred_stack);
-    igraph_vector_destroy(&node_ordering);
-    igraph_vector_destroy(&pred_idx);
-    igraph_vector_destroy(&visited);
+  if(allow_unconnected && fixed != NULL){ 
+    // ignore fixed s/e-vertexes in multiple-cluster setting (might be good idea to allow this)
+    printf("Fixed start and end edges are not allowed in the multiple-cluster setting.\n");
     return 1;
   }
 
+  if(fixed != NULL){
+    IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, fixed[0]));
+    number_of_clusters = 1;
+    fixed_count = 1;
+  } else {
+    // find max-degree nodes for all clusters
+    int cluster_id;
+    for (i = 0; i < vcount2; i++) {
+      cluster_id = VECTOR(membership)[i];
+
+      if (DEGREE(*graph2, i) > VECTOR(cluster_max_deg)[cluster_id]) { 
+        VECTOR(cluster_max_deg)[cluster_id] = DEGREE(*graph2, i);
+        VECTOR(cluster_start_node)[cluster_id] = i;
+      } 
+    }
+
+    // TODO (!!) performance: order by cluster size?
+    IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, VECTOR(cluster_start_node)[0])); // push vertex of first cluster first
+    fixed_count = 0;
+  }
+
+  // assert: one node is already pushed to node_stack
+  IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, -1)); // first node has no predecessor
+
+  i = 0; // start DFS
+  for(k = 0; k < number_of_clusters; k++){ // start a DFS for each cluster
+    
+    if(k != 0){ // fetch a new starting node
+      IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, VECTOR(cluster_start_node)[k]));
+      IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, -1)); // node from new cluster doesnt have a predecessor
+    }     
+
+    // DFS for one cluster
+    while (!igraph_stack_empty(&dfs_node_stack)) {
+      pattern_node = (long int) igraph_stack_pop(&dfs_node_stack);
+      pred = (long int) igraph_stack_pop(&dfs_pred_stack);
+      if (VECTOR(visited)[pattern_node] == 1)
+        continue;
+
+      // insert current node into ordering and set predecessor index
+      VECTOR(node_ordering)[i] = pattern_node;
+      VECTOR(pred_idx)[i] = pred;
+
+      // add neighbors to stack
+      // TODO: in the order specified by RI's scoring functions
+      for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
+        if (VECTOR(visited)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
+          continue;
+        }
+        if ((variant == IGRAPH_GSPAN_LFRMINER)
+  	    && VECTOR(*vertex_color2)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
+  	// only the e node has label 1, and it is treated specially (see below)
+  	continue;
+        }
+        IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
+        IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
+      }
+
+      if ((variant == IGRAPH_GSPAN_LFRMINER) && (i == 0)) {
+        // we just added the s node at the first position of the DFS node ordering,
+        // and added its neighbors (except for e node) to the stack.
+        // The next node in the ordering must be the e node (which is a neighbor), so we
+        // put in on top of the stack.
+        for (j = 0; j < DEGREE(*graph2, pattern_node); j++) {
+  	if (VECTOR(*vertex_color2)[NEIGHBOR(*graph2, pattern_node, j)] == 1) {
+  	  IGRAPH_CHECK(igraph_stack_push(&dfs_node_stack, NEIGHBOR(*graph2, pattern_node, j)));
+  	  IGRAPH_CHECK(igraph_stack_push(&dfs_pred_stack, i));
+  	  break;
+  	}
+        }
+      }
+
+      VECTOR(visited)[pattern_node] = 1;
+      i++;
+    }
+
+  }  
   // initialize the state representation
   IGRAPH_CHECK(igraph_vector_init(&state_target_idx, vcount2));
   IGRAPH_CHECK(igraph_vector_init(&state_target_node, vcount2));
@@ -352,8 +392,10 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       }
 
       success = 1;
-      pattern_node = VECTOR(node_ordering)[partial_solution_pos];
-      if (partial_solution_pos == 0) {
+
+      pattern_node = VECTOR(node_ordering)[partial_solution_pos]; // get the node from working dfs pos
+      if (partial_solution_pos == 0 
+          || (long int) VECTOR(pred_idx)[partial_solution_pos] == -1) { // fb change here?
 	// target index is actual target node
 	VECTOR(state_target_node)[partial_solution_pos] = VECTOR(state_target_idx)[partial_solution_pos];
       } else {
@@ -363,7 +405,10 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	    (long int) VECTOR(state_target_idx)[partial_solution_pos]);
       }
       target_node = VECTOR(state_target_node)[partial_solution_pos];
-      //igraph_vector_print(&state_target_node);
+
+      //////////////////////////////////////////////
+      //  CHECK CONSTRAINTS
+      /////////////////////////////////////////////
 
       // check colors
       if (vertex_color1 && (VECTOR(*vertex_color1)[target_node]
@@ -523,6 +568,11 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 	}
       } // for i (other matched nodes)
 
+      /////////////////////////////////////
+      // NEXT NODE SELECTION
+      ////////////////////////////////////
+
+
       if (success) {
 	// partial solution is consistent
 	if (partial_solution_pos == vcount2-1) {
@@ -535,23 +585,53 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
       } else {
 	// partial solution has failed
 
-	while ((partial_solution_pos > 0)
-		&& (VECTOR(state_target_idx)[partial_solution_pos]
-		    == DEGREE(*graph1, (long int) VECTOR(state_target_node)[(long int)
-				VECTOR(pred_idx)[partial_solution_pos]])-1)) {
-	  // all nodes from parent's neighborhood have been tried, perform backtracking
+
+  // TODO: perform backtracking IF
+  // necessary condition: partial_solution_pos > 0
+  // if :normal node: all child nodes must have been tried
+  // if :first (cluster) node: all nodes from big graph have been tried.
+	while ((partial_solution_pos > 0) // and if NOT -1 ! -> consider other nodes as candidates, like with 1
+		&& ((( VECTOR(pred_idx)[partial_solution_pos] > -1 ) 
+        && (VECTOR(state_target_idx)[partial_solution_pos] == DEGREE(*graph1, (long int) VECTOR(state_target_node)[
+                                                    (long int) VECTOR(pred_idx)[partial_solution_pos]])-1))
+        || // or
+        ((VECTOR(pred_idx)[partial_solution_pos] == -1) 
+          && VECTOR(state_target_idx)[partial_solution_pos] == vcount1-1))
+        ){
+	  // all nodes from parent's neighborhood have been tried (or all nodes have been tried for cluster starter)
+    // perform backtracking
 	  partial_solution_pos--;
 	}
 
-	if (partial_solution_pos == 0) {
+  // TODO: here we chack only if he first node is without a predecessor -> aply that learning for other ones as well
+  // ? how can we make sure we dont visit a previously visited edge
+  // ? We work with NO induced graphs! for this setting (also without induced?)
+	if (partial_solution_pos == 0 
+    ||(long int) VECTOR(pred_idx)[partial_solution_pos] == -1 // fb changed
+    ) {  
 	  if (fixed_count == 0) {
 	    // special case: first position, no fixed nodes -> all target nodes are candidates
-	    if (VECTOR(state_target_idx)[0] == vcount1-1) {
-	      // all target nodes have been tried, no candidates left
-	      break;
+	    if (VECTOR(state_target_idx)[partial_solution_pos] == vcount1-1) {
+	      
+        // backtrack to next unfully elaborated cluster
+        while((partial_solution_pos > 0) && 
+          (((long int) VECTOR(pred_idx)[partial_solution_pos] != -1)
+               || (VECTOR(state_target_idx)[partial_solution_pos] == vcount1-1))){
+          partial_solution_pos--;
+        }
+
+        if(partial_solution_pos == 0 && VECTOR(state_target_idx)[partial_solution_pos] == vcount1-1){
+          // all target nodes have been tried, no candidates left
+          break; 
+        } else {
+          // try new start node for cluster
+          VECTOR(state_target_idx)[partial_solution_pos] += 1;
+        }
+        
+	      
 	    } else {
 	      // try next target node
-	      VECTOR(state_target_idx)[0] += 1;
+	      VECTOR(state_target_idx)[partial_solution_pos] += 1;
 	    }
 	  } else if (fixed_count == 1) {
 	    // special case: first position, fixed node -> cannot change assignment
@@ -583,6 +663,7 @@ int igraph_i_subisomorphic(const igraph_t *graph1, const igraph_t *graph2,
 
   return 0;
 }
+
 int igraph_subisomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
 			   const igraph_vector_int_t *vertex_color1,
 			   const igraph_vector_int_t *vertex_color2,
@@ -594,6 +675,7 @@ int igraph_subisomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
 			   igraph_gspan_variant_t variant,
 			   void *variant_data,
 			   long int *fixed,
+         igraph_bool_t allow_unconnected,
 			   igraph_bool_t *iso) {
   return igraph_i_subisomorphic(graph1, graph2,
 			   vertex_color1,
@@ -606,8 +688,54 @@ int igraph_subisomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
 			   variant,
 			   variant_data,
 			   fixed,
+         allow_unconnected,
 			   iso);
 }
+
+int igraph_isomorphic_evomine(const igraph_t *graph1, const igraph_t *graph2,
+         const igraph_vector_int_t *vertex_color1,
+         const igraph_vector_int_t *vertex_color2,
+         const igraph_vector_int_t *edge_color1,
+         const igraph_vector_int_t *edge_color2,
+         /* igraph_bool_t induced, */
+         /*igraph_gspan_variant_t variant,*/ // TODO erik: only normal, right? 
+         /* void *variant_data, */
+         /* long int *fixed, */
+         igraph_bool_t *iso){
+
+  *iso = 0;
+  long int vcount1 = igraph_vcount(graph1);
+  long int vcount2 = igraph_vcount(graph2);
+
+  if(vcount2 != vcount1){ // no isomorphism
+    return 0;
+  }
+
+  long int ecount1 = igraph_ecount(graph1);
+  long int ecount2 = igraph_ecount(graph2);
+
+  if(ecount2 != ecount1){ // no isomorphism
+    return 0;
+  }
+
+  // the graphs counts are identical 
+  // if one is the subgraph of the other, it will be a full isomorphism
+  return igraph_i_subisomorphic(graph1, graph2,
+                                       vertex_color1,
+                                       vertex_color2,
+                                       edge_color1,
+                                       edge_color2,
+                                       NULL,
+                                       NULL,
+                                       1,
+                                       0,
+                                       NULL,
+                                       NULL,
+                                       1,
+                                       iso);
+
+}
+
 
 
 // ------------- SUPPORT MEASURES -------------
@@ -644,7 +772,7 @@ int igraph_mib_support(const igraph_t *graph1,
       iso = 0;
       if (igraph_i_subisomorphic(graph2, graph2, vertex_color2, vertex_color2, edge_color2,
 	      edge_color2, edge_timestamp2, edge_timestamp2, induced, variant /*for GERM*/,
-	      /*variant_data=*/ NULL, fixed, &iso)) {
+	      /*variant_data=*/ NULL, fixed, 0, &iso)) {
 	igraph_matrix_destroy(&automorphic_nodes);
 	return 1;
       }
@@ -683,7 +811,7 @@ int igraph_mib_support(const igraph_t *graph1,
       iso = 0;
       if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2, edge_color1,
 	      edge_color2, edge_timestamp1, edge_timestamp2, induced, variant, variant_data,
-	      fixed, &iso)) {
+	      fixed,0, &iso)) {
 	#pragma omp critical (status)
 	abort_status = 2;
 	#pragma omp flush(abort_status)
@@ -801,7 +929,7 @@ int igraph_egobased_support(const igraph_t *graph1,
     fixed[1] = i;
     if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
 		  edge_color1, edge_color2, edge_timestamp1, edge_timestamp2, induced,
-		  variant, variant_data, fixed, &iso)) {
+		  variant, variant_data, fixed,0, &iso)) {
       abort_status = 1;
       #pragma omp flush(abort_status)
     }
@@ -844,7 +972,7 @@ int igraph_shallow_support(const igraph_t *graph1,
   igraph_bool_t iso;
   if (igraph_i_subisomorphic(graph1, graph2, vertex_color1, vertex_color2,
 		edge_color1, edge_color2, edge_timestamp1, edge_timestamp2, induced,
-		variant, variant_data, /*fixed=*/ NULL, &iso)) {
+		variant, variant_data, /*fixed=*/ NULL, 0,&iso)) {
     return 1;
   }
   if (iso) {
