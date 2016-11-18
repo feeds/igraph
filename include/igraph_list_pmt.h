@@ -43,6 +43,9 @@ void FUNCTION(igraph_llist,print)(TYPE(igraph_llist) *llist);
 int FUNCTION(igraph_llist,push_back)(TYPE(igraph_llist) *llist, BASE data);
 long int FUNCTION(igraph_llist,size)(TYPE(igraph_llist) *llist);
 BASE FUNCTION(igraph_llist,back)(TYPE(igraph_llist) *llist);
+BASE FUNCTION(igraph_llist,first)(TYPE(igraph_llist) *llist);
 int FUNCTION(igraph_llist,to_vector)(TYPE(igraph_llist) *llist, TYPE(igraph_vector) *vector,
       int skip);
+int FUNCTION(igraph_llist, insert_at)(TYPE(igraph_llist) * llist, BASE data, long int position);
+BASE FUNCTION(igraph_llist, item_at)(TYPE(igraph_llist) * llist, long int position);
 

@@ -79,6 +79,10 @@ BASE FUNCTION(igraph_llist,back)(TYPE(igraph_llist) *llist) {
   return llist->last->data;
 }
 
+BASE FUNCTION(igraph_llist,first)(TYPE(igraph_llist) *llist) {
+  return llist->first->data;
+}
+
 int FUNCTION(igraph_llist,to_vector)(TYPE(igraph_llist) *llist, TYPE(igraph_vector) *vector,
       int skip) {
   IGRAPH_CHECK(FUNCTION(igraph_vector,resize)(vector, FUNCTION(igraph_llist,size)(llist)-skip));
@@ -94,5 +98,71 @@ int FUNCTION(igraph_llist,to_vector)(TYPE(igraph_llist) *llist, TYPE(igraph_vect
     VECTOR(*vector)[i] = item->data;
   }
   return 0;
+}
+
+// access is ONLY in O(n)
+// NOTE: a valid position is within [0;llist->len] and specifies the number of items before the new item position
+int FUNCTION(igraph_llist, insert_at)(TYPE(igraph_llist) * llist, BASE data, long int position) {
+    if(position > llist->len){ return 1;}
+
+    TYPE(igraph_llist_item) *new = igraph_Calloc(1,TYPE(igraph_llist_item));
+    if( new == NULL){ return 1;}
+
+    new->data = data;
+
+    if(llist->len != 0){
+
+        TYPE(igraph_llist_item) *item;
+        long int i;
+        i = 0;
+        item = llist->first;
+
+        // find item before position
+        while (i < (position-1)) {
+            item = item->next;
+            i++;
+        }
+
+        // 4 changes are needed to rearrange pointers
+        new->next = item->next;
+        item->next = new;
+        new->prev = item;
+        if(new->next != NULL){
+            new->next->prev = new;
+        }
+    }   
+
+    // added as first?
+    if(position == 0){
+        llist->first = new;
+    }
+
+    // added as last?
+    if(position == (llist->len)){
+        llist->last = new;
+    }
+
+    llist->len++;
+
+    return 0;
+}
+
+// access is ONLY O(n)
+// NOTE: a valid position is within [0;llist->len - 1] and specifies the number of items before the new item position
+BASE FUNCTION(igraph_llist, item_at)(TYPE(igraph_llist) * llist, long int position) {
+    if(position >= llist->len){ return 1;}
+
+    TYPE(igraph_llist_item) *item;
+    long int i;
+    i = 0;
+    item = llist->first;
+
+    // find item before position
+    while (i < position) {
+        item = item->next;
+        i++;
+    }
+
+    return item->data;
 }
 
