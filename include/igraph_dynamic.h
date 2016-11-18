@@ -99,6 +99,15 @@ int igraph_write_dynamic_union_graph_projection(igraph_vector_ptr_t *graphs,
 
 void igraph_evomine_stream(igraph_t *initial_network, igraph_event_t *stream);
 
+void igraph_seperate_graph_pattern(
+    const igraph_t *g, 
+    const igraph_vector_int_t *vcolors, const igraph_vector_int_t *ecolors,
+    int max_vcolor, int max_ecolor, 
+    igraph_t *a_g, igraph_t *b_g
+    ,igraph_vector_int_t *a_vc, igraph_vector_int_t *b_vc
+    ,igraph_vector_int_t *a_ecolors, igraph_vector_int_t *b_ecolors
+    );
+
 __END_DECLS
 
 #endif

@@ -1566,3 +1566,93 @@ int igraph_write_avm(long int N, long int T, int avg_degree,
 
   return 0;
 }
+
+// seperate an evolutionary graph pattern g into it's two timesteps a -> b
+void igraph_seperate_graph_pattern(
+    const igraph_t *g, 
+    const igraph_vector_int_t *vcolors, const igraph_vector_int_t *ecolors,
+    int max_vcolor, int max_ecolor, 
+    igraph_t *a_g, igraph_t *b_g
+    ,igraph_vector_int_t *a_vc, igraph_vector_int_t *b_vc
+    ,igraph_vector_int_t *a_ecolors, igraph_vector_int_t *b_ecolors
+    ) {
+ 
+  long int i;
+  long int N = igraph_vcount(g);
+  igraph_integer_t from, to;
+
+  if (ecolors == NULL) {
+    printf("ERROR: need edge colors, forgot -c -m MAX_ECOLOR flags?\n");
+    return;
+  }
+
+  // vertices
+  igraph_vector_int_init(a_vc,N);
+  igraph_vector_int_init(b_vc,N);
+
+  // if existent, add node-colors
+  // otherwise, label all nodes '1'
+  if (vcolors != NULL){
+    for (i = 0; i < igraph_vcount(g); i++) {
+        VECTOR(*a_vc)[i] = VECTOR(*vcolors)[i]/(max_vcolor+1);
+        VECTOR(*b_vc)[i] = VECTOR(*vcolors)[i]%(max_vcolor+1);
+    }
+  } else {
+    igraph_real_t one = 1;
+    igraph_vector_int_fill(a_vc,one);
+    igraph_vector_int_fill(b_vc,one); 
+  }
+  
+  // graphs
+  igraph_empty(a_g, N, igraph_is_directed(g));
+  igraph_empty(b_g, N, igraph_is_directed(g));
+
+  // edges
+  igraph_vector_t a_edges, b_edges;
+  igraph_llist_t a_edge_list, b_edge_list;
+
+  igraph_llist_int_t a_ecolors_list;
+  igraph_llist_int_t b_ecolors_list;
+
+  igraph_vector_init(&a_edges, 0);
+  igraph_vector_init(&b_edges, 0);
+
+  igraph_llist_init(&a_edge_list);
+  igraph_llist_init(&b_edge_list);
+
+  igraph_llist_int_init(&a_ecolors_list);
+  igraph_llist_int_init(&b_ecolors_list);
+
+
+  for (i = 0; i < igraph_ecount(g); i++) {
+    igraph_edge(g, i, &from, &to);
+
+    if (VECTOR(*ecolors)[i] / (max_ecolor+1) > 0) {
+       int a_color = VECTOR(*ecolors)[i]/(max_ecolor+1);
+       igraph_llist_int_push_back(&a_ecolors_list, a_color);
+       igraph_llist_push_back(&a_edge_list, from);
+       igraph_llist_push_back(&a_edge_list, to);
+    }
+
+
+    if (VECTOR(*ecolors)[i] % (max_ecolor+1) > 0) {
+      int b_color = VECTOR(*ecolors)[i]%(max_ecolor+1);
+      igraph_llist_int_push_back(&b_ecolors_list,b_color);
+      igraph_llist_push_back(&b_edge_list, from);
+      igraph_llist_push_back(&b_edge_list, to);
+    }
+  }
+
+  igraph_llist_to_vector(&a_edge_list, &a_edges, 0);
+  igraph_llist_to_vector(&b_edge_list, &b_edges, 0);
+
+  // "return"
+  igraph_add_edges(a_g, &a_edges, 0);  
+  igraph_add_edges(b_g, &b_edges, 0);  
+
+  igraph_vector_int_init(a_ecolors,0);
+  igraph_vector_int_init(b_ecolors,0);
+  igraph_llist_int_to_vector(&a_ecolors_list,a_ecolors, 0);
+  igraph_llist_int_to_vector(&b_ecolors_list,b_ecolors, 0);
+
+}
