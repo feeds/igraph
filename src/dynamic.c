@@ -1492,13 +1492,23 @@ int igraph_read_and_project_transactions_velist(FILE *instream, igraph_bool_t di
   return 0;
 }
 
-
 int igraph_write_avm(long int N, long int T, int avg_degree,
+      double opinion_prior, double rewiring_p, int initial_graph_generator,
+      FILE *outstream){
+    igraph_write_avm_collected(
+      N, T, avg_degree,
+      opinion_prior, rewiring_p, initial_graph_generator,
+      1 /* edge rewirings per timestep */,
+      outstream);
+}
+
+int igraph_write_avm_collected(long int N, long int T, int avg_degree,
 	    double opinion_prior, double rewiring_p, int initial_graph_generator,
+      int edge_rewirings_per_T,
 	    FILE *outstream) {
   igraph_t graph;
   igraph_vector_int_t opinions;
-  long int i, t, eid, v_resolv, v_other, v_new;
+  long int i, t, j, eid, v_resolv, v_other, v_new;
   igraph_integer_t v1, v2;
 
   srand(time(NULL));
@@ -1526,37 +1536,41 @@ int igraph_write_avm(long int N, long int T, int avg_degree,
 
   // evolve network
   for (t = 0; t < T; t++) {
-    // randomly choose an edge that connects nodes with different opinions
-    do {
-      eid = rand() % igraph_ecount(&graph);
-      IGRAPH_CHECK(igraph_edge(&graph, eid, &v1, &v2));
-      printf("+++ sampling edge %ld\n", eid);
-    } while (VECTOR(opinions)[v1] == VECTOR(opinions)[v2]); // TODO: possibly infinite
 
-    // randomly choose one of the two nodes as the resolver
-    if (rand() % 2) {
-      v_resolv = v1;
-      v_other = v2;
-    } else {
-      v_resolv = v2;
-      v_other = v1;
-    }
-
-    // randomly choose an action to take (rewiring or adoption)
-    if ((rand()/(double)RAND_MAX)<rewiring_p) {
-      // rewiring
+    // rewire edges several times in one timestep
+    for (j = 0; j < edge_rewirings_per_T; j++){
+      // randomly choose an edge that connects nodes with different opinions
       do {
-	v_new = rand() % N;
-      } while ((v_new == v_resolv) || (VECTOR(opinions)[v_new] != VECTOR(opinions)[v_resolv]));//inf
-      printf("time %ld: %ld rewires from %ld to %ld\n", t+1, v_resolv,
-		  v_other, v_new);
-      IGRAPH_CHECK(igraph_delete_edges(&graph, igraph_ess_1(eid)));
-      IGRAPH_CHECK(igraph_add_edge(&graph, v_resolv, v_new));
-    } else {
-      // adoption
-      printf("time %ld: %ld adopts opinion %d from %ld\n", t+1, v_resolv,
-		  VECTOR(opinions)[v_other], v_other);
-      VECTOR(opinions)[v_resolv] = VECTOR(opinions)[v_other];
+        eid = rand() % igraph_ecount(&graph);
+        IGRAPH_CHECK(igraph_edge(&graph, eid, &v1, &v2));
+        printf("+++ sampling edge %ld\n", eid);
+      } while (VECTOR(opinions)[v1] == VECTOR(opinions)[v2]); // TODO: possibly infinite
+
+      // randomly choose one of the two nodes as the resolver
+      if (rand() % 2) {
+        v_resolv = v1;
+        v_other = v2;
+      } else {
+        v_resolv = v2;
+        v_other = v1;
+      }
+
+      // randomly choose an action to take (rewiring or adoption)
+      if ((rand()/(double)RAND_MAX)<rewiring_p) {
+        // rewiring
+        do {
+  	v_new = rand() % N;
+        } while ((v_new == v_resolv) || (VECTOR(opinions)[v_new] != VECTOR(opinions)[v_resolv]));//inf
+        printf("time %ld: %ld rewires from %ld to %ld\n", t+1, v_resolv,
+  		  v_other, v_new);
+        IGRAPH_CHECK(igraph_delete_edges(&graph, igraph_ess_1(eid)));
+        IGRAPH_CHECK(igraph_add_edge(&graph, v_resolv, v_new));
+      } else {
+        // adoption
+        printf("time %ld: %ld adopts opinion %d from %ld\n", t+1, v_resolv,
+  		  VECTOR(opinions)[v_other], v_other);
+        VECTOR(opinions)[v_resolv] = VECTOR(opinions)[v_other];
+      }
     }
 
     // write graph

@@ -59,6 +59,10 @@ typedef struct igraph_event_t {
   long int v1, v2, label;
 } igraph_event_t;
 
+int igraph_write_avm_collected(long int N, long int T, int avg_degree,
+      double opinion_prior, double rewiring_p, int initial_graph_generator,
+      int edge_rewirings_per_T,
+      FILE *outstream);
 
 int igraph_write_avm(long int N, long int T, int avg_degree,
 	    double opinion_prior, double rewiring_p, int initial_graph_generator,
