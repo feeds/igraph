@@ -1585,7 +1585,7 @@ int igraph_write_avm_collected(long int N, long int T, int avg_degree,
 int igraph_citing_evolved_network(long int t, long int n, igraph_integer_t edges_per_step, 
                                    igraph_real_t m, FILE *outstream){
   igraph_t graph;
-  long int i, v_new, v_selected, ecount, vcount, out_degree;
+  long int i,j, v_new, v_selected, ecount, vcount, out_degree;
   igraph_vector_t types, pref;
 
   igraph_rng_t * rng = igraph_rng_default();
@@ -1622,7 +1622,7 @@ int igraph_citing_evolved_network(long int t, long int n, igraph_integer_t edges
       if(random_index < vcount){
         v_selected = random_index;
       } else {
-        IGRAPH_CHECK(igraph_edge(&graph, random_index - v_count, &from, &to));
+        IGRAPH_CHECK(igraph_edge(&graph, random_index - vcount, &from, &to));
         v_selected = to;
       }
       IGRAPH_CHECK(igraph_add_edge(&graph, v_new, v_selected));
