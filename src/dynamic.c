@@ -1581,6 +1581,64 @@ int igraph_write_avm_collected(long int N, long int T, int avg_degree,
   return 0;
 }
 
+int igraph_citing_evolved_network(long int t, long int n, igraph_integer_t edges_per_step, 
+                                   igraph_real_t m, FILE *outstream){
+  igraph_t graph;
+  long int t, n, i, v_new, v_selected, ecount, vcount;
+  const igraph_vector_t types, pref;
+  igraph_integer_t edges_per_step;
+
+  igraph_rng_t * rng = igraph_rng_default();
+  igraph_rng_seed(rng, time(NULL));
+
+  // -- gnerate first snapshot of graph
+  igraph_vector_init(&types,n); // type of every node, all 0 for simplicity
+  igraph_vector_init(&pref,1); VECOTR(pref)[0] = 1; // preference for type '0' is 1
+  IGRAPH_CHECK(igraph_cited_type_game(&graph, n,
+                                      &types,
+                                      &pref,
+                                      edges_per_step,
+                                      /*directed*/ 1));
+  vcount = igraph_vcount(&graph);
+  ecount = igraph_ecount(&graph);
+  // already add all evolving nodes to graph to fulfill Eriks assumption, all nodes are already in the graph
+  IGRAPH_CHECK(igraph_add_vertices(&graph,t,0));
+  // write first graph
+  fprintf(outstream, "t # 0\n");
+  igraph_write_colored_graph(&graph, NULL, NULL, NULL, outstream);
+
+  // -- evolve according to Price's model
+  for(i = 0; i < t; t++){
+    // perform evolvement for one timestep
+    v_new = n + i; // because n_end = n_start + t
+    // TODO: check if distribution is ok 
+    // better - poisson: lambda = m, generate via gsl: unsigned int gsl_ran_poisson (const gsl_rng * r, double mu)
+    out_degree = max(0,floor(igraph_rng_get_normal(rng, m, 0.5)); // standard deviation=0.5, 
+    for(j = 0; j < out_degree; j++){
+      // randomly chose node proportional to (1 + in_degree)
+      igraph_integer_t random_index, to, from;
+      random_index = igraph_rng_get_integer(rng, 0, ecount + vcount - 1);
+      if(random_index < vcount){
+        v_selected = random_index;
+      } else {
+        IGRAPH_CHECK(igraph_edge(&graph, random_index - v_count, &from, &to));
+        v_selected = to;
+      }
+      IGRAPH_CHECK(igraph_add_edge(&graph, v_new, v_selected));
+    }
+    // update counts after random seletion
+    ecount += out_degree; 
+    vcount++;
+
+    // print graph
+    fprintf(outstream, "t # %ld\n", t+1);
+    igraph_write_colored_graph(&graph, NULL, NULL, NULL, outstream);
+  }
+
+  //TODO: not yet dead
+  return 0;
+}
+
 // seperate an evolutionary graph pattern g into it's two timesteps a -> b
 void igraph_seperate_graph_pattern(
     const igraph_t *g, 
