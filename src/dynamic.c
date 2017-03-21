@@ -31,6 +31,7 @@
 #include "igraph_memory.h"
 #include "igraph_structural.h"
 #include "igraph_games.h"
+#include "igraph_random.h"
 
 
 int igraph_i_compute_joint_neighborhood(igraph_t *graph1, igraph_t *graph2,
@@ -1584,16 +1585,15 @@ int igraph_write_avm_collected(long int N, long int T, int avg_degree,
 int igraph_citing_evolved_network(long int t, long int n, igraph_integer_t edges_per_step, 
                                    igraph_real_t m, FILE *outstream){
   igraph_t graph;
-  long int t, n, i, v_new, v_selected, ecount, vcount;
-  const igraph_vector_t types, pref;
-  igraph_integer_t edges_per_step;
+  long int i, v_new, v_selected, ecount, vcount, out_degree;
+  igraph_vector_t types, pref;
 
   igraph_rng_t * rng = igraph_rng_default();
   igraph_rng_seed(rng, time(NULL));
 
   // -- gnerate first snapshot of graph
   igraph_vector_init(&types,n); // type of every node, all 0 for simplicity
-  igraph_vector_init(&pref,1); VECOTR(pref)[0] = 1; // preference for type '0' is 1
+  igraph_vector_init(&pref,1); VECTOR(pref)[0] = 1; // preference for type '0' is 1
   IGRAPH_CHECK(igraph_cited_type_game(&graph, n,
                                       &types,
                                       &pref,
@@ -1613,7 +1613,8 @@ int igraph_citing_evolved_network(long int t, long int n, igraph_integer_t edges
     v_new = n + i; // because n_end = n_start + t
     // TODO: check if distribution is ok 
     // better - poisson: lambda = m, generate via gsl: unsigned int gsl_ran_poisson (const gsl_rng * r, double mu)
-    out_degree = max(0,floor(igraph_rng_get_normal(rng, m, 0.5)); // standard deviation=0.5, 
+    out_degree = floor(igraph_rng_get_normal(rng, m, 0.5)); // standard deviation=0.5, 
+    out_degree = out_degree < 0 ? 0 : out_degree;
     for(j = 0; j < out_degree; j++){
       // randomly chose node proportional to (1 + in_degree)
       igraph_integer_t random_index, to, from;
